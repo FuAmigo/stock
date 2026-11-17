@@ -246,8 +246,9 @@ function doPost(e){var L=LockService.getScriptLock();L.waitLock(20000);
   <p class="note" style="margin-top:0">資料存在這台電腦的瀏覽器裡，換電腦或清除瀏覽資料前，請先備份。</p>
   <div class="row"><button class="btn" id="e-json">下載備份檔</button><label style="width:240px">還原備份檔<input type="file" id="i-json" accept=".json"></label></div>
  </div>
-<div class="card"><h2>版本說明　v1.3（2026-11-17）</h2>
+<div class="card"><h2>版本說明　v1.3.1（2026-11-17）</h2>
   <ul class="note" style="line-height:1.9;padding-left:20px;margin:0">
+   <li><b>v1.3.1</b>　修正股票名稱自動帶入：輸入代號後不必離開欄位即可帶入名稱與價格，查不到時會提示；台股資料來源失敗時改走備援。</li>
    <li><b>v1.3</b>　新增美股：代號為英文字母即視為美股，自動抓價、美元計價、可買零股、可設定美股手續費與稅；彙總以 USD/TWD 匯率折合台幣；版本說明移到設定頁最下方。</li>
    <li><b>v1.2</b>　標題改為 Fu &amp; Amigo 台美股密碼；A、B 帳本各有專屬顏色；減少動態效果；更換插圖與圖示。</li>
    <li><b>v1.1</b>　新增賣出紀錄與已實現損益（平均成本法）；A、B 兩本獨立帳本；Google 試算表自動儲存，每 10 秒同步一次。</li>
@@ -318,11 +319,12 @@ async function usQuote(sym,wantName){
 async function loadAll(){
  const st=$('#pxs');st.textContent='股價更新中…';
  const get=async u=>{const r=await fetch(u);if(!r.ok)throw 0;return r.json()};
+ const getx=async u=>{try{return await get(u)}catch(e){return get('https://api.allorigins.win/raw?url='+encodeURIComponent(u))}};
  const codes=[...new Set(S.recs.filter(r=>r.t==='buy'||r.t==='sell').map(r=>r.c))],us=codes.filter(isUS),tw=codes.filter(c=>!isUS(c));
  const now=new Date().toLocaleString('zh-TW',{hour12:false});let ok=0,uo=0;
  await Promise.allSettled([
-  get('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL').then(a=>{a.forEach(r=>{const p=parseFloat(String(r.ClosingPrice).replace(/,/g,''));ALL[r.Code]={n:r.Name,p:isNaN(p)?null:p}});ok++}),
-  get('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes').then(a=>{a.forEach(r=>{const p=parseFloat(String(r.Close).replace(/,/g,''));ALL[r.SecuritiesCompanyCode]={n:r.CompanyName,p:isNaN(p)?null:p}});ok++}),
+  getx('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL').then(a=>{a.forEach(r=>{const p=parseFloat(String(r.ClosingPrice).replace(/,/g,''));ALL[r.Code]={n:r.Name,p:isNaN(p)?null:p}});ok++}),
+  getx('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes').then(a=>{a.forEach(r=>{const p=parseFloat(String(r.Close).replace(/,/g,''));ALL[r.SecuritiesCompanyCode]={n:r.CompanyName,p:isNaN(p)?null:p}});ok++}),
   (async()=>{if(S.fxm)return;try{S.fx=(await get('https://api.frankfurter.app/latest?from=USD&to=TWD')).rates.TWD}catch(e){try{S.fx=(await get('https://open.er-api.com/v6/latest/USD')).rates.TWD}catch(e2){}}})(),
   ...us.map(async c=>{const q=await usQuote(c);if(q){S.px[c]={p:q.p,t:now};if(q.n)S.names[c]=q.n;uo++}})]);
  tw.forEach(c=>{if(ALL[c]&&ALL[c].p!=null)S.px[c]={p:ALL[c].p,t:now}});
@@ -332,6 +334,8 @@ async function loadAll(){
  if(us.length||S.fxm)parts.push('匯率 USD/TWD '+(+S.fx).toFixed(3)+(S.fxm?'（手動）':''));
  st.textContent=parts.length?parts.join('；')+'　'+now+'。抓不到的可點現價旁 ✎ 手動輸入。':'';
  if($('#s-fx')&&!S.fxm)$('#s-fx').value=(+S.fx).toFixed(3);
+ if($('#fc').value&&!$('#fn').value)fillCode('#fc','#fn','#fp',autoFee,'#fnote');
+ if($('#sc').value&&!$('#sn').value)fillCode('#sc','#sn','#sp',autoSell,'#snote');
  renderAll()}
 
 /* ---- 畫面 ---- */
@@ -417,12 +421,19 @@ $('#e-gs').onclick=async()=>{const t=$('#gscode');t.select();try{await navigator
 let feeT=false,sfT=false,sxT=false;
 function autoFee(){if(feeT)return;const c=$('#fc').value.trim().toUpperCase(),a=(+$('#fp').value)*(+$('#fs').value);ctx(c);$('#ff').value=a>0?fee(a,c):'';$('#fnote').textContent=a>0?'成交金額 '+n0(a)+(isUS(c)?' 美元':' 元')+'，手續費已自動試算，可自行修改':''}
 $('#fp').oninput=$('#fs').oninput=autoFee;$('#ff').oninput=()=>feeT=true;
-function fillCode(cs,nm,ps,cb){const c=$(cs).value.trim().toUpperCase();$(cs).value=c;if(!c){cb();return}
- const n=nameOf(c)||(ALL[c]&&ALL[c].n);if(n&&!$(nm).value)$(nm).value=n;
- if(isUS(c))usQuote(c,true).then(q=>{if(!q)return;if(q.n&&!$(nm).value)$(nm).value=q.n;if(!$(ps).value)$(ps).value=q.p;cb()});
- else if(ALL[c]&&ALL[c].p&&!$(ps).value)$(ps).value=ALL[c].p;
- cb()}
-$('#fc').onchange=()=>fillCode('#fc','#fn','#fp',autoFee);
+function fillCode(cs,nm,ps,cb,note){const c=$(cs).value.trim().toUpperCase();$(cs).value=c;
+ [nm,ps].forEach(s=>{if($(s).dataset.auto){$(s).value='';delete $(s).dataset.auto}});
+ if(!c){cb();return}
+ const set=(s,v)=>{if(v!==undefined&&v!==null&&v!==''&&!$(s).value){$(s).value=v;$(s).dataset.auto=1}};
+ set(nm,nameOf(c)||(ALL[c]&&ALL[c].n));
+ if(isUS(c))usQuote(c,true).then(q=>{if(!q||$(cs).value.trim().toUpperCase()!==c)return;set(nm,q.n);set(ps,q.p);cb()});
+ else if(ALL[c]&&ALL[c].p)set(ps,ALL[c].p);
+ cb();
+ if(!isUS(c)&&!$(nm).value&&c.length>=4)$(note).textContent=Object.keys(ALL).length?'查無此代號的名稱，請確認代號或手動輸入':'台股名稱資料尚未載入（網路或瀏覽器限制），請手動輸入名稱'}
+const deb=(f,ms)=>{let t;return()=>{clearTimeout(t);t=setTimeout(f,ms)}};
+$('#fc').onchange=()=>fillCode('#fc','#fn','#fp',autoFee,'#fnote');
+$('#fc').addEventListener('input',deb(()=>{if($('#fc').value.trim().length>=2)fillCode('#fc','#fn','#fp',autoFee,'#fnote')},500));
+['#fn','#sn','#fp','#sp'].forEach(s=>$(s).addEventListener('input',()=>delete $(s).dataset.auto));
 $('#add').onclick=()=>{
  const d=$('#fd').value,c=$('#fc').value.trim().toUpperCase(),p=+$('#fp').value,s=+$('#fs').value;
  if(!d||!c||!(p>0)||!(s>0)){toast('請填寫日期、代號、價格與股數');return}
@@ -432,7 +443,8 @@ $('#add').onclick=()=>{
 function autoSell(){const c=$('#sc').value.trim().toUpperCase(),a=(+$('#sp').value)*(+$('#ss').value);ctx(c);if(!sfT)$('#sf').value=a>0?fee(a,c):'';if(!sxT)$('#sx').value=a>0?tax(c,a):'';
  const o=ledger().H.find(o=>o.c==c);$('#snote').textContent=o&&o.sh?'目前持有 '+ns(o.sh)+' 股，平均成本 '+n2(o.cost/o.sh)+(isUS(c)?' 美元':''):''}
 $('#sp').oninput=$('#ss').oninput=autoSell;$('#sf').oninput=()=>sfT=true;$('#sx').oninput=()=>sxT=true;
-$('#sc').onchange=()=>fillCode('#sc','#sn','#sp',autoSell);
+$('#sc').onchange=()=>fillCode('#sc','#sn','#sp',autoSell,'#snote');
+$('#sc').addEventListener('input',deb(()=>{if($('#sc').value.trim().length>=2)fillCode('#sc','#sn','#sp',autoSell,'#snote')},500));
 $('#adds').onclick=()=>{
  const d=$('#sd').value,c=$('#sc').value.trim().toUpperCase(),p=+$('#sp').value,s=+$('#ss').value,o=ledger().H.find(o=>o.c==c);
  if(!d||!c||!(p>0)||!(s>0)){toast('請填寫日期、代號、價格與股數');return}
