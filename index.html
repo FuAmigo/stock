@@ -216,15 +216,16 @@ textarea{font:.78rem/1.4 monospace;width:100%;height:150px;border:2px solid var(
  <div class="card"><h2>連到 Google 試算表（自動儲存、即時更新）</h2>
   <p class="note" style="margin-top:0">做一次就好，兩個人共用同一個網址：</p>
   <ol class="note" style="line-height:1.9;padding-left:20px">
-   <li>開一個新的 Google 試算表 →「擴充功能」→「Apps Script」。</li>
-   <li>把預設程式碼全部刪掉，貼上下方程式碼，按儲存。</li>
+   <li>打開你的 Google 試算表，從網址複製試算表 ID（網址中 /d/ 和 /edit 之間那一長串）。</li>
+   <li>用同一個帳號打開 script.google.com →「新專案」，刪掉預設程式碼，貼上下方程式碼，把第一行的「貼上你的試算表ID」換成剛才複製的 ID，按儲存。</li>
    <li>「部署」→「新增部署作業」→ 類型選「網頁應用程式」→ 執行身分選「我」、誰可以存取選「所有人」→ 部署並完成授權。</li>
    <li>複製「網頁應用程式網址」（結尾是 /exec），貼到下面欄位。</li>
   </ol>
   <label>網頁應用程式網址<input id="s-url" placeholder="https://script.google.com/macros/s/.../exec"></label>
   <div class="row"><button class="btn alt" id="e-gs">複製 Apps Script 程式碼</button></div>
-  <textarea id="gscode" readonly style="margin-top:10px">const SHEET='records',COLS=['id','u','t','d','c','n','p','s','f','x','m','upd'];
-function sheet_(){var ss=SpreadsheetApp.getActiveSpreadsheet(),s=ss.getSheetByName(SHEET);
+  <textarea id="gscode" readonly style="margin-top:10px">const SHEET_ID='貼上你的試算表ID';
+const SHEET='records',COLS=['id','u','t','d','c','n','p','s','f','x','m','upd'];
+function sheet_(){var ss=SpreadsheetApp.openById(SHEET_ID),s=ss.getSheetByName(SHEET);
  if(!s){s=ss.insertSheet(SHEET);s.appendRow(COLS);s.setFrozenRows(1);s.getRange('A:F').setNumberFormat('@');s.getRange('L:L').setNumberFormat('@')}
  return s}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON)}
