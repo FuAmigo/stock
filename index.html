@@ -223,31 +223,122 @@ textarea{font:.78rem/1.4 monospace;width:100%;height:150px;border:2px solid var(
   </ol>
   <label>網頁應用程式網址<input id="s-url" placeholder="https://script.google.com/macros/s/.../exec"></label>
   <div class="row"><button class="btn alt" id="e-gs">複製 Apps Script 程式碼</button></div>
-  <textarea id="gscode" readonly style="margin-top:10px">const SHEET_ID='貼上你的試算表ID';
-const SHEET='records',COLS=['id','u','t','d','c','n','p','s','f','x','m','upd'];
-function sheet_(){var ss=SpreadsheetApp.openById(SHEET_ID),s=ss.getSheetByName(SHEET);
- if(!s){s=ss.insertSheet(SHEET);s.appendRow(COLS);s.setFrozenRows(1);s.getRange('A:F').setNumberFormat('@');s.getRange('L:L').setNumberFormat('@')}
- return s}
-function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON)}
-function doGet(){var v=sheet_().getDataRange().getValues(),h=v.shift(),recs=[];
- v.forEach(function(r){if(r[0]!==''){var o={};h.forEach(function(k,i){o[k]=r[i]});recs.push(o)}});
- return out_({ok:1,recs:recs})}
-function doPost(e){var L=LockService.getScriptLock();L.waitLock(20000);
- try{var ops=JSON.parse(e.postData.contents).ops,s=sheet_(),last=s.getLastRow(),
-  ids=last>1?s.getRange(2,1,last-1,1).getValues().map(function(r){return String(r[0])}):[];
-  ops.forEach(function(op){var i=ids.indexOf(String(op.id));
-   if(op.del){if(i>=0){s.deleteRow(i+2);ids.splice(i,1)}}
-   else{var row=COLS.map(function(k){return op.rec[k]===undefined?'':op.rec[k]});row[11]=new Date().toISOString();
-    if(i>=0)s.getRange(i+2,1,1,COLS.length).setValues([row]);else{s.appendRow(row);ids.push(String(op.id))}}});
-  return out_({ok:1})}catch(err){return out_({ok:0,err:String(err)})}finally{L.releaseLock()}}</textarea>
-  <p class="note">連線後，每次新增或刪除都會立刻寫進試算表的「records」工作表，頁面每 10 秒會自動讀回對方的更新。知道網址的人都能讀寫，請只分享給彼此。若之後修改程式碼，需要重新部署。</p>
+  <textarea id="gscode" readonly style="margin-top:10px">const SHEET_ID = '貼上你的試算表ID';
+const SHEET = 'records', COLS = ['id','u','t','d','c','n','p','s','f','x','m','upd'];
+function sheet_() {
+  var ss = SpreadsheetApp.openById(SHEET_ID), s = ss.getSheetByName(SHEET);
+  if (!s) {
+    s = ss.insertSheet(SHEET);
+    s.appendRow(COLS);
+    s.setFrozenRows(1);
+    s.getRange('A:F').setNumberFormat('@');
+    s.getRange('L:L').setNumberFormat('@');
+  }
+  return s;
+}
+function out_(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+function doGet(e) {
+  if (e && e.parameter && e.parameter.q === 'quote') {
+    return out_({ ok: 1, q: quote_(String(e.parameter.codes || '').split(',').filter(String).slice(0, 40)) });
+  }
+  var v = sheet_().getDataRange().getValues(), h = v.shift(), recs = [];
+  v.forEach(function (r) {
+    if (r[0] !== '') {
+      var o = {};
+      h.forEach(function (k, i) { o[k] = r[i]; });
+      recs.push(o);
+    }
+  });
+  return out_({ ok: 1, recs: recs });
+}
+function doPost(e) {
+  var L = LockService.getScriptLock();
+  L.waitLock(20000);
+  try {
+    var ops = JSON.parse(e.postData.contents).ops, s = sheet_(), last = s.getLastRow(),
+      ids = last > 1 ? s.getRange(2, 1, last - 1, 1).getValues().map(function (r) { return String(r[0]); }) : [];
+    ops.forEach(function (op) {
+      var i = ids.indexOf(String(op.id));
+      if (op.del) {
+        if (i >= 0) { s.deleteRow(i + 2); ids.splice(i, 1); }
+      } else {
+        var row = COLS.map(function (k) { return op.rec[k] === undefined ? '' : op.rec[k]; });
+        row[11] = new Date().toISOString();
+        if (i >= 0) s.getRange(i + 2, 1, 1, COLS.length).setValues([row]);
+        else { s.appendRow(row); ids.push(String(op.id)); }
+      }
+    });
+    return out_({ ok: 1 });
+  } catch (err) {
+    return out_({ ok: 0, err: String(err) });
+  } finally {
+    L.releaseLock();
+  }
+}
+// ---- 股票名稱與報價查詢（網頁會呼叫）----
+function twMap_() {
+  var c = CacheService.getScriptCache(), m = {};
+  [['tw', 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL', 'Code', 'Name', 'ClosingPrice'],
+   ['otc', 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes', 'SecuritiesCompanyCode', 'CompanyName', 'Close']
+  ].forEach(function (s) {
+    var t = c.get(s[0]);
+    if (!t) {
+      try {
+        var r = UrlFetchApp.fetch(s[1], { muteHttpExceptions: true });
+        if (r.getResponseCode() == 200) {
+          var o = {};
+          JSON.parse(r.getContentText()).forEach(function (x) {
+            o[x[s[2]]] = [x[s[3]], parseFloat(String(x[s[4]]).replace(/,/g, '')) || null];
+          });
+          t = JSON.stringify(o);
+          c.put(s[0], t, 21600);
+        }
+      } catch (err) {}
+    }
+    if (t) { var o2 = JSON.parse(t); for (var k in o2) m[k] = o2[k]; }
+  });
+  return m;
+}
+function mis_(code) {
+  try {
+    var r = UrlFetchApp.fetch('https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_' + code + '.tw%7Cotc_' + code + '.tw&json=1&delay=0',
+      { muteHttpExceptions: true, headers: { Referer: 'https://mis.twse.com.tw/stock/index.jsp' } });
+    var a = JSON.parse(r.getContentText()).msgArray || [];
+    for (var i = 0; i < a.length; i++) if (a[i].n) return [a[i].n, parseFloat(a[i].z) || parseFloat(a[i].y) || null];
+  } catch (err) {}
+  return null;
+}
+function yahoo_(sym) {
+  try {
+    var r = UrlFetchApp.fetch('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(sym.replace('.', '-')) + '?interval=1d&range=1d',
+      { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    var m = JSON.parse(r.getContentText()).chart.result[0].meta;
+    if (m.regularMarketPrice > 0) return [m.shortName || m.longName || '', m.regularMarketPrice];
+  } catch (err) {}
+  return null;
+}
+function quote_(codes) {
+  var out = {}, tw = null;
+  codes.forEach(function (c) {
+    c = c.toUpperCase();
+    var v = null;
+    if (/^[A-Z]/.test(c)) v = yahoo_(c);
+    else { if (!tw) tw = twMap_(); v = tw[c] || mis_(c); }
+    if (v) out[c] = { n: v[0], p: v[1] };
+  });
+  return out;
+}</textarea>
+  <p class="note">連線後，每次新增或刪除都會立刻寫進試算表的「records」工作表，頁面每 10 秒會自動讀回對方的更新。知道網址的人都能讀寫，請只分享給彼此。若之後修改程式碼，需要重新部署。<br><b>已部署過、要升級到新版：</b>貼上新程式碼並把第一行換成你的試算表 ID → 在編輯器上方選函式「doGet」按「執行」，完成授權（會多一個「連線到外部服務」權限，一樣點「進階 → 前往」）→「部署 → 管理部署作業」→ 按鉛筆編輯 → 版本選「新版本」→ 部署。網址不變，不用重貼。</p>
  </div>
  <div class="card"><h2>備份與還原</h2>
   <p class="note" style="margin-top:0">資料存在這台電腦的瀏覽器裡，換電腦或清除瀏覽資料前，請先備份。</p>
   <div class="row"><button class="btn" id="e-json">下載備份檔</button><label style="width:240px">還原備份檔<input type="file" id="i-json" accept=".json"></label></div>
  </div>
-<div class="card"><h2>版本說明　v1.4（2026-11-18）</h2>
+<div class="card"><h2>版本說明　v1.5（2026-11-18）</h2>
   <ul class="note" style="line-height:1.9;padding-left:20px;margin:0">
+   <li><b>v1.5</b>　股票名稱查詢大幅加強：內建約 120 檔常見台股與 ETF 名稱（輸入代號立即帶入）；雲端程式新增查詢功能，由 Google 伺服器代查台股、美股名稱與價格，不受瀏覽器限制；庫存頁更新股價也會用雲端補查。</li>
    <li><b>v1.4</b>　台股代號可直接查詢名稱與價格（不必先有買進紀錄，多個來源備援）；買進、賣出、股利紀錄都能編輯；刪除前會跳出警示並顯示該筆內容。</li>
    <li><b>v1.3.1</b>　修正股票名稱自動帶入：輸入代號後不必離開欄位即可帶入名稱與價格，查不到時會提示；台股資料來源失敗時改走備援。</li>
    <li><b>v1.3</b>　新增美股：代號為英文字母即視為美股，自動抓價、美元計價、可買零股、可設定美股手續費與稅；彙總以 USD/TWD 匯率折合台幣；版本說明移到設定頁最下方。</li>
@@ -311,15 +402,23 @@ function ledger(ex){
 let ALL={};
 const PROX=['https://api.allorigins.win/raw?url=','https://corsproxy.io/?url='];
 async function jget(u){for(const t of [u,...PROX.map(p=>p+encodeURIComponent(u))]){try{const r=await fetch(t,{signal:AbortSignal.timeout(7000)});if(r.ok)return await r.json()}catch(e){}}throw 0}
-async function twLookup(c){ // 單檔查詢：證交所即時資訊（上市 tse、上櫃 otc 一起查）
+let GSOLD=false;
+async function gsQuote(codes){ // 透過你的 Apps Script 在雲端查（沒有跨網站限制）
+ if(!S.url||!codes.length)return{};
+ try{const j=await (await fetch(S.url+(S.url.includes('?')?'&':'?')+'q=quote&codes='+encodeURIComponent(codes.join(',')),{signal:AbortSignal.timeout(25000)})).json();
+  if(j.ok&&j.q){GSOLD=false;return j.q}if(j.ok)GSOLD=true}catch(e){}
+ return{}}
+async function twLookup(c){
  if(ALL[c])return ALL[c];
+ const g=await gsQuote([c]);if(g[c]){ALL[c]=g[c];if(g[c].n)S.names[c]=g[c].n;save();return g[c]}
  try{const j=await jget('https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_'+c+'.tw|otc_'+c+'.tw&json=1&delay=0');
   const m=(j.msgArray||[]).find(x=>x.n);if(m){const o={n:m.n,p:parseFloat(m.z)||parseFloat(m.y)||null};ALL[c]=o;S.names[c]=m.n;save();return o}}catch(e){}
  return null}
-async function usQuote(sym,wantName){
+async function usQuote(sym,wantName,useGs){
  sym=sym.toUpperCase();const sig={signal:AbortSignal.timeout(8000)};
  if(S.key){try{const j=await (await fetch('https://finnhub.io/api/v1/quote?symbol='+encodeURIComponent(sym)+'&token='+encodeURIComponent(S.key),sig)).json();
   if(j&&j.c>0){let n='';if(wantName){try{n=(await (await fetch('https://finnhub.io/api/v1/stock/profile2?symbol='+encodeURIComponent(sym)+'&token='+encodeURIComponent(S.key),sig)).json()).name||''}catch(e){}}return{p:j.c,n}}}catch(e){}}
+ if(useGs){const g=await gsQuote([sym]);if(g[sym]&&g[sym].p!=null)return{p:g[sym].p,n:g[sym].n||''}}
  try{const u='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(sym.replace('.','-'))+'?interval=1d&range=1d';
   const m=(await jget(u)).chart.result[0].meta;
   if(m.regularMarketPrice>0)return{p:m.regularMarketPrice,n:m.shortName||m.longName||''}}catch(e){}
@@ -329,16 +428,17 @@ async function loadAll(){
  const get=async u=>{const r=await fetch(u);if(!r.ok)throw 0;return r.json()};
  const getx=u=>jget(u);
  const codes=[...new Set(S.recs.filter(r=>r.t==='buy'||r.t==='sell').map(r=>r.c))],us=codes.filter(isUS),tw=codes.filter(c=>!isUS(c));
- const now=new Date().toLocaleString('zh-TW',{hour12:false});let ok=0,uo=0;
+ const now=new Date().toLocaleString('zh-TW',{hour12:false});let ok=0,uo=0,g={};
  await Promise.allSettled([
   getx('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL').then(a=>{a.forEach(r=>{const p=parseFloat(String(r.ClosingPrice).replace(/,/g,''));ALL[r.Code]={n:r.Name,p:isNaN(p)?null:p}});ok++}),
   getx('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes').then(a=>{a.forEach(r=>{const p=parseFloat(String(r.Close).replace(/,/g,''));ALL[r.SecuritiesCompanyCode]={n:r.CompanyName,p:isNaN(p)?null:p}});ok++}),
   (async()=>{if(S.fxm)return;try{S.fx=(await get('https://api.frankfurter.app/latest?from=USD&to=TWD')).rates.TWD}catch(e){try{S.fx=(await get('https://open.er-api.com/v6/latest/USD')).rates.TWD}catch(e2){}}})(),
-  ...us.map(async c=>{const q=await usQuote(c);if(q){S.px[c]={p:q.p,t:now};if(q.n)S.names[c]=q.n;uo++}})]);
+  ...us.map(async c=>{const q=await usQuote(c);if(q){S.px[c]={p:q.p,t:now};if(q.n)S.names[c]=q.n;uo++}}),gsQuote(codes).then(x=>{g=x})]);
  tw.forEach(c=>{if(ALL[c]&&ALL[c].p!=null)S.px[c]={p:ALL[c].p,t:now}});
+ codes.forEach(c=>{if((!S.px[c]||S.px[c].t!==now)&&g[c]&&g[c].p!=null){S.px[c]={p:g[c].p,t:now};if(g[c].n)S.names[c]=g[c].n}});
  Object.keys(ALL).forEach(c=>S.names[c]=ALL[c].n);save();
- const parts=[];if(tw.length)parts.push(ok?'台股已更新（最近收盤價）':'台股抓價失敗');
- if(us.length)parts.push('美股 '+uo+'/'+us.length+' 檔已更新');
+ const fresh=a=>a.filter(c=>S.px[c]&&S.px[c].t===now).length,parts=[];if(tw.length)parts.push('台股 '+fresh(tw)+'/'+tw.length+' 檔已更新');
+ if(us.length)parts.push('美股 '+fresh(us)+'/'+us.length+' 檔已更新');
  if(us.length||S.fxm)parts.push('匯率 USD/TWD '+(+S.fx).toFixed(3)+(S.fxm?'（手動）':''));
  st.textContent=parts.length?parts.join('；')+'　'+now+'。抓不到的可點現價旁 ✎ 手動輸入。':'';
  if($('#s-fx')&&!S.fxm)$('#s-fx').value=(+S.fx).toFixed(3);
@@ -349,7 +449,8 @@ async function loadAll(){
 /* ---- 畫面 ---- */
 const deco=`<svg viewBox="0 0 150 110" fill="none" aria-hidden="true"><ellipse class="fl" cx="75" cy="100" rx="50" ry="6"/><path class="st fa" d="M50 72h50l-6 26H56z"/><path class="st" d="M75 72V44"/><path class="st fb" d="M75 56q-26-2-28-22q22-2 28 22z"/><path class="st fb" d="M75 48q24-4 30-24q-24 0-30 24z"/><circle class="fc st" cx="75" cy="30" r="9"/></svg>`;
 const emptyBox=t=>`<div class="empty">${deco}<div>${t}</div></div>`;
-const nameOf=c=>S.names[c]||(S.recs.find(r=>r.c==c&&r.n)||{}).n||'';
+const BUILTIN=Object.fromEntries('2330:台積電,2317:鴻海,2454:聯發科,2412:中華電,2308:台達電,2881:富邦金,2882:國泰金,2891:中信金,2886:兆豐金,2884:玉山金,2885:元大金,2892:第一金,2880:華南金,2883:凱基金,5880:合庫金,2890:永豐金,2801:彰銀,2303:聯電,3711:日月光投控,2382:廣達,2357:華碩,2379:瑞昱,3034:聯詠,2327:國巨,2395:研華,3008:大立光,3037:欣興,3045:台灣大,4904:遠傳,1301:台塑,1303:南亞,1326:台化,6505:台塑化,1216:統一,2002:中鋼,1101:台泥,1102:亞泥,2207:和泰車,2603:長榮,2609:陽明,2615:萬海,2618:長榮航,2610:華航,2105:正新,2912:統一超,5871:中租-KY,5876:上海商銀,2301:光寶科,2345:智邦,3231:緯創,2356:英業達,4938:和碩,6669:緯穎,3017:奇鋐,3661:世芯-KY,2408:南亞科,2344:華邦電,2409:友達,3481:群創,2353:宏碁,2324:仁寶,2376:技嘉,2377:微星,2449:京元電子,3443:創意,3293:鈊象,8069:元太,6488:環球晶,3105:穩懋,8299:群聯,6274:台燿,2368:金像電,3533:嘉澤,2383:台光電,1590:亞德客-KY,2049:上銀,9910:豐泰,2059:川湖,3653:健策,0050:元大台灣50,0051:元大中型100,0052:富邦科技,0053:元大電子,0055:元大MSCI金融,0056:元大高股息,006208:富邦台50,00631L:元大台灣50正2,00632R:元大台灣50反1,00646:元大S&P500,00662:富邦NASDAQ,00692:富邦公司治理,00713:元大台灣高息低波,00757:統一FANG+,00850:元大臺灣ESG永續,00878:國泰永續高股息,00881:國泰台灣5G+,00891:中信關鍵半導體,00892:富邦台灣半導體,00893:國泰智能電動車,00900:富邦特選高股息30,00905:FT臺灣Smart,00907:永豐優息存股,00912:中信臺灣智慧50,00913:兆豐台灣晶圓製造,00915:凱基優選高股息30,00918:大華優利高填息30,00919:群益台灣精選高息,00921:兆豐龍頭等權重,00922:國泰台灣領袖50,00923:群益台ESG低碳50,00927:群益半導體收益,00929:復華台灣科技優息,00930:永豐ESG低碳高息等權,00934:中信成長高股息,00935:野村臺灣新科技50,00936:台新永續高息中小,00939:統一台灣高息動能,00940:元大台灣價值高息,00941:中信上游半導體,00944:野村趨勢動能高息,00946:群益科技高息成長,00947:台新臺灣IC設計'.split(',').map(s=>s.split(':')));
+const nameOf=c=>S.names[c]||BUILTIN[c]||(S.recs.find(r=>r.c==c&&r.n)||{}).n||'';
 
 function renderUsers(){
  document.documentElement.dataset.l=S.cur;
@@ -435,11 +536,11 @@ function fillCode(cs,nm,ps,cb,note){const c=$(cs).value.trim().toUpperCase();$(c
  const set=(s,v)=>{if(v!==undefined&&v!==null&&v!==''&&!$(s).value){$(s).value=v;$(s).dataset.auto=1}};
  const same=()=>$(cs).value.trim().toUpperCase()===c;
  set(nm,nameOf(c)||(ALL[c]&&ALL[c].n));
- if(isUS(c))usQuote(c,true).then(q=>{if(!q||!same())return;set(nm,q.n);set(ps,q.p);cb()});
+ if(isUS(c))usQuote(c,true,true).then(q=>{if(!q||!same())return;set(nm,q.n);set(ps,q.p);cb()});
  else if(ALL[c])set(ps,ALL[c].p);
  cb();
  if(!isUS(c)&&!ALL[c]&&c.length>=4){$(note).textContent='查詢股票名稱中…';
-  twLookup(c).then(o=>{if(!same())return;if(o){set(nm,o.n);set(ps,o.p);cb()}else if(!$(nm).value)$(note).textContent='查不到這個代號的名稱，請確認代號或手動輸入'})}}
+  twLookup(c).then(o=>{if(!same())return;if(o){set(nm,o.n);set(ps,o.p);cb()}else if(!$(nm).value)$(note).textContent=GSOLD?'查不到名稱：請把雲端程式更新到新版（設定頁有說明），或先手動輸入':S.url?'查不到這個代號的名稱，請確認代號或先手動輸入（之後同代號會自動記住）':'查不到名稱：請先手動輸入，或到設定頁連到 Google 試算表以啟用雲端查詢'})}}
 const deb=(f,ms)=>{let t;return()=>{clearTimeout(t);t=setTimeout(f,ms)}};
 $('#fc').onchange=()=>fillCode('#fc','#fn','#fp',autoFee,'#fnote');
 $('#fc').addEventListener('input',deb(()=>{if($('#fc').value.trim().length>=2)fillCode('#fc','#fn','#fp',autoFee,'#fnote')},500));
