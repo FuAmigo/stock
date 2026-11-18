@@ -336,8 +336,9 @@ function quote_(codes) {
   <p class="note" style="margin-top:0">資料存在這台電腦的瀏覽器裡，換電腦或清除瀏覽資料前，請先備份。</p>
   <div class="row"><button class="btn" id="e-json">下載備份檔</button><label style="width:240px">還原備份檔<input type="file" id="i-json" accept=".json"></label></div>
  </div>
-<div class="card"><h2>版本說明　v1.5（2026-11-18）</h2>
+<div class="card"><h2>版本說明　v1.5.1（2026-11-18）</h2>
   <ul class="note" style="line-height:1.9;padding-left:20px;margin:0">
+   <li><b>v1.5.1</b>　修正編輯後資料被舊的雲端內容蓋回去的問題（雲端同步的時間差）；編輯、刪除、新增在雲端確認前，不會再被舊資料覆蓋。</li>
    <li><b>v1.5</b>　股票名稱查詢大幅加強：內建約 120 檔常見台股與 ETF 名稱（輸入代號立即帶入）；雲端程式新增查詢功能，由 Google 伺服器代查台股、美股名稱與價格，不受瀏覽器限制；庫存頁更新股價也會用雲端補查。</li>
    <li><b>v1.4</b>　台股代號可直接查詢名稱與價格（不必先有買進紀錄，多個來源備援）；買進、賣出、股利紀錄都能編輯；刪除前會跳出警示並顯示該筆內容。</li>
    <li><b>v1.3.1</b>　修正股票名稱自動帶入：輸入代號後不必離開欄位即可帶入名稱與價格，查不到時會提示；台股資料來源失敗時改走備援。</li>
@@ -498,8 +499,9 @@ function renderAll(){
  $('#codes').innerHTML=ledger().H.map(o=>`<option value="${esc(o.c)}">${esc(o.n)}</option>`).join('')}
 
 /* ---- 寫入（本機＋雲端） ---- */
-function put(r){const i=S.recs.findIndex(x=>x.id===r.id);i>=0?S.recs[i]=r:S.recs.push(r);save();qop({id:r.id,rec:r});renderAll()}
-function del(id){if(Object.values(EDIT).includes(id))stopEdit(true);S.recs=S.recs.filter(x=>x.id!==id);save();qop({id,del:1});renderAll()}
+let rev=0; // 本機每改一次就加一，避免舊的雲端資料蓋掉剛改的內容
+function put(r){rev++;const i=S.recs.findIndex(x=>x.id===r.id);i>=0?S.recs[i]=r:S.recs.push(r);save();qop({id:r.id,rec:r});renderAll()}
+function del(id){rev++;if(Object.values(EDIT).includes(id))stopEdit(true);S.recs=S.recs.filter(x=>x.id!==id);save();qop({id,del:1});renderAll()}
 
 /* ---- Google 試算表同步（Apps Script 網頁應用程式） ---- */
 let busy=false;const setSt=t=>$('#sync').textContent=t;
@@ -513,8 +515,10 @@ const byId=a=>[...a].sort((x,y)=>x.id>y.id?1:-1);
 async function pull(first){
  if(!S.url){setSt('未連線雲端（資料只存在本機）');return}
  setSt('同步中…');if(!(await flush()))return;
+ const r0=rev;
  try{const r=await fetch(S.url+(S.url.includes('?')?'&':'?')+'t='+Date.now());const j=await r.json();if(!j.ok)throw 0;
-  let recs=j.recs.map(norm);
+  if(rev!==r0||S.q.length||busy){setSt('同步中…');return}
+  let recs=[...new Map(j.recs.map(norm).map(r=>[r.id,r])).values()]; // 同一個 id 只留最後一筆
   if(first){const ids=new Set(recs.map(r=>r.id)),lo=S.recs.filter(r=>!ids.has(r.id));
    if(lo.length&&confirm('本機有 '+lo.length+' 筆資料雲端還沒有，要上傳嗎？\n（選「取消」將以雲端資料為準，本機多出的資料會被取代）')){lo.forEach(r=>S.q.push({id:r.id,rec:r}));save();if(!(await flush()))return;recs=recs.concat(lo)}}
   if(JSON.stringify(byId(recs))!==JSON.stringify(byId(S.recs.map(norm)))){S.recs=recs;save();renderAll()}
@@ -562,7 +566,7 @@ $('#add').onclick=()=>{
  if(!d||!c||!(p>0)||!(s>0)){toast('請填寫日期、代號、價格與股數');return}
  const f=$('#ff').value===''?fee(p*s,c):+$('#ff').value,n=$('#fn').value.trim()||nameOf(c);
  put(mk(Object.assign({t:'buy',d,c,n,p,s,f},EDIT.buy?{id:EDIT.buy}:{})));if(n)S.names[c]=n;
- ['#fc','#fn','#fp','#fs','#ff'].forEach(i=>$(i).value='');$('#fnote').textContent='';const ed=EDIT.buy;stopEdit();toast(ed?'已儲存修改':'已放進帳本')};
+ ['#fc','#fn','#fp','#fs','#ff'].forEach(i=>$(i).value='');$('#fnote').textContent='';const ed=EDIT.buy;stopEdit();toast(ed?'已儲存修改，同步到雲端中…':'已放進帳本')};
 function autoSell(){const c=$('#sc').value.trim().toUpperCase(),a=(+$('#sp').value)*(+$('#ss').value);ctx(c);if(!sfT)$('#sf').value=a>0?fee(a,c):'';if(!sxT)$('#sx').value=a>0?tax(c,a):'';
  const o=ledger().H.find(o=>o.c==c);$('#snote').textContent=o&&o.sh?'目前持有 '+ns(o.sh)+' 股，平均成本 '+n2(o.cost/o.sh)+(isUS(c)?' 美元':''):''}
 $('#sp').oninput=$('#ss').oninput=autoSell;$('#sf').oninput=()=>sfT=true;$('#sx').oninput=()=>sxT=true;
@@ -574,14 +578,14 @@ $('#adds').onclick=()=>{
  if(!o||o.sh<s-1e-9){toast('賣出股數超過目前持有（'+(o?ns(o.sh):0)+' 股）');return}
  const f=$('#sf').value===''?fee(p*s,c):+$('#sf').value,x=$('#sx').value===''?tax(c,p*s):+$('#sx').value;
  put(mk(Object.assign({t:'sell',d,c,n:$('#sn').value.trim()||o.n,p,s,f,x},EDIT.sell?{id:EDIT.sell}:{})));
- ['#sc','#sn','#sp','#ss','#sf','#sx'].forEach(i=>$(i).value='');$('#snote').textContent='';const ed=EDIT.sell;stopEdit();toast(ed?'已儲存修改':'已記下賣出')};
+ ['#sc','#sn','#sp','#ss','#sf','#sx'].forEach(i=>$(i).value='');$('#snote').textContent='';const ed=EDIT.sell;stopEdit();toast(ed?'已儲存修改，同步到雲端中…':'已記下賣出')};
 const dcalc=()=>{if(!$('#dt').dataset.m){const c=$('#dc').value.trim().toUpperCase(),r=(+$('#dp').value)*(+$('#ds').value),v=isUS(c)?Math.round(r*100)/100:Math.round(r);$('#dt').value=v>0?v:''}};
 $('#dc').onchange=()=>{const c=$('#dc').value.trim().toUpperCase();$('#dc').value=c;const o=ledger().H.find(x=>x.c==c);if(o&&o.sh&&!$('#ds').value){$('#ds').value=o.sh;dcalc()}};
 $('#dp').oninput=$('#ds').oninput=dcalc;$('#dt').oninput=()=>$('#dt').dataset.m=1;
 $('#addd').onclick=()=>{
  const d=$('#dd').value,c=$('#dc').value.trim().toUpperCase(),p=+$('#dp').value,s=+$('#ds').value,m=+$('#dt').value;
  if(!d||!c||!(m>0)){toast('請填寫發放日、代號與金額');return}
- put(mk(Object.assign({t:'div',d,c,p,s,m},EDIT.div?{id:EDIT.div}:{})));['#dc','#dp','#ds','#dt'].forEach(i=>{$(i).value='';delete $(i).dataset.m});const ed=EDIT.div;stopEdit();toast(ed?'已儲存修改':'已記下股利')};
+ put(mk(Object.assign({t:'div',d,c,p,s,m},EDIT.div?{id:EDIT.div}:{})));['#dc','#dp','#ds','#dt'].forEach(i=>{$(i).value='';delete $(i).dataset.m});const ed=EDIT.div;stopEdit();toast(ed?'已儲存修改，同步到雲端中…':'已記下股利')};
 document.addEventListener('click',e=>{
  const t=e.target.closest('button');if(!t)return;
  if(t.dataset.edit){const r=S.recs.find(x=>x.id===t.dataset.edit);if(r)startEdit(r)}
