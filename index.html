@@ -152,20 +152,23 @@ textarea{font:.78rem/1.4 monospace;width:100%;height:150px;border:2px solid var(
  <div class="card"><h2>目前庫存</h2>
   <div class="row" style="margin:0 0 10px">
    <button class="btn" id="refresh">更新股價</button>
+   <button class="btn alt" id="godiv">記錄股利／配股</button>
    <label style="width:150px">目標淨賺（%）<input type="number" id="tgt" step="0.5" min="0"></label>
    <span class="note" id="pxs"></span>
   </div>
   <div class="tw" id="hold"></div>
   <p class="note">美股以美元計價，上方彙總會以目前匯率折合台幣（未計買賣當時的匯差）。損益已扣除「買進手續費」與「預估賣出手續費＋證交稅」。目標賣價＝賣出後淨賺達目標 %（成本＝買價＋買進手續費），並已進位到可掛單的升降單位。紅色為賺、綠色為賠。</p>
  </div>
- <div class="card"><h2>記錄領到的股利</h2>
+ <div class="card"><h2>記錄股利與配股</h2>
   <div class="grid">
+   <label>類型<select id="dk"><option value="div">現金股利（配息）</option><option value="bonus">配股（股票股利）</option></select></label>
    <label>發放日<input type="date" id="dd"></label>
    <label>股票代號<input id="dc" list="codes"></label>
-   <label>每股現金股利<input type="number" id="dp" step="0.0001" min="0"></label>
-   <label>領息股數<input type="number" id="ds" step="any" min="0"></label>
-   <label>實領金額（可修改）<input type="number" id="dt" step="any" min="0"></label>
+   <label><span id="dpl">每股現金股利</span><input type="number" id="dp" step="0.0001" min="0"></label>
+   <label>領息／配股的基準股數<input type="number" id="ds" step="any" min="0"></label>
+   <label><span id="dtl">實領金額（可修改）</span><input type="number" id="dt" step="any" min="0"></label>
   </div>
+  <p class="note" id="dkn"></p>
   <div class="row"><button class="btn alt" id="addd">記下股利</button><button class="btn alt" id="canceld" hidden>取消修改</button></div>
   <div class="tw" id="divs" style="margin-top:10px"></div>
  </div>
@@ -347,8 +350,9 @@ function quote_(codes) {
   <p class="note" style="margin-top:0">資料存在這台電腦的瀏覽器裡，換電腦或清除瀏覽資料前，請先備份。</p>
   <div class="row"><button class="btn" id="e-json">下載備份檔</button><label style="width:240px">還原備份檔<input type="file" id="i-json" accept=".json"></label></div>
  </div>
-<div class="card"><h2>版本說明　v1.5.3（2026-11-18）</h2>
+<div class="card"><h2>版本說明　v1.6（2026-11-18）</h2>
   <ul class="note" style="line-height:1.9;padding-left:20px;margin:0">
+   <li><b>v1.6</b>　新增「配股」（股票股利）：庫存股數增加、成本不變、平均成本下降；股利與配股統一在庫存損益頁下方的「記錄股利與配股」輸入，也可從「記錄股利／配股」按鈕直接跳過去；新增的股票會自動補抓現價，開啟庫存頁超過 5 分鐘也會自動更新，查不到的會在狀態列列出代號。</li>
    <li><b>v1.5.3</b>　雲端程式改成每次寫入前先把 id、日期、代號設為純文字，並自動修復舊資料（0052 不再變 52、日期不再差一天）；設定頁會顯示雲端程式版本，不是最新版時會提醒；網頁會把被改成數字的代號寫回雲端。</li>
    <li><b>v1.5.2</b>　修正試算表裡代號 0052 變成 52、日期被轉成日期格式的問題（雲端程式會把相關欄位固定為純文字並自動修復舊資料）；網頁會依名單補回常見代號的前導 0；點右上角的同步狀態可立即同步。</li>
    <li><b>v1.5.1</b>　修正編輯後資料被舊的雲端內容蓋回去的問題（雲端同步的時間差）；編輯、刪除、新增在雲端確認前，不會再被舊資料覆蓋。</li>
@@ -406,9 +410,10 @@ const px=c=>S.px[c]&&S.px[c].p;
 /* ---- 帳本：平均成本法，賣出時按股數扣掉對應的買入成本 ---- */
 function ledger(ex){
  const H={},sells=[];
- const ev=S.recs.filter(r=>r.u===S.cur&&r.id!==ex&&(r.t==='buy'||r.t==='sell')).sort((a,b)=>(a.d+(a.t==='buy'?0:1)+a.id).localeCompare(b.d+(b.t==='buy'?0:1)+b.id));
+ const ev=S.recs.filter(r=>r.u===S.cur&&r.id!==ex&&(r.t==='buy'||r.t==='sell'||r.t==='bonus')).sort((a,b)=>(a.d+(a.t==='sell'?1:0)+a.id).localeCompare(b.d+(b.t==='sell'?1:0)+b.id));
  ev.forEach(r=>{const o=H[r.c]||(H[r.c]={c:r.c,n:r.n,sh:0,cost:0,cnt:0,scnt:0,real:0,div:0});if(r.n)o.n=r.n;
   if(r.t==='buy'){o.sh+=r.s;o.cost+=r.p*r.s+r.f;o.cnt++}
+  else if(r.t==='bonus'){o.sh+=r.m}
   else{const q=Math.min(r.s,o.sh),out=o.sh>0?o.cost*q/o.sh:0,net=r.p*r.s-r.f-r.x,rl=net-out;o.sh-=q;o.cost-=out;o.scnt++;o.real+=rl;sells.push({...r,net,out,rl})}});
  S.recs.forEach(r=>{if(r.u===S.cur&&r.t==='div'&&H[r.c])H[r.c].div+=r.m});
  Object.values(H).forEach(o=>{if(o.sh<=1e-9){o.sh=0;o.cost=0}});
@@ -439,7 +444,10 @@ async function usQuote(sym,wantName,useGs){
   const m=(await jget(u)).chart.result[0].meta;
   if(m.regularMarketPrice>0)return{p:m.regularMarketPrice,n:m.shortName||m.longName||''}}catch(e){}
  return null}
-async function loadAll(){
+let loadingPx=false,LASTPX=0;const TRIED=new Set();
+async function loadAll(){if(loadingPx)return;loadingPx=true;try{await loadAll0()}finally{loadingPx=false;LASTPX=Date.now()}}
+function ensurePx(){if(loadingPx)return;const miss=[...new Set(S.recs.filter(r=>r.t==='buy'||r.t==='sell').map(r=>r.c))].filter(c=>px(c)==null&&!TRIED.has(c));if(!miss.length)return;miss.forEach(c=>TRIED.add(c));loadAll()}
+async function loadAll0(){
  const st=$('#pxs');st.textContent='股價更新中…';
  const get=async u=>{const r=await fetch(u);if(!r.ok)throw 0;return r.json()};
  const getx=u=>jget(u);
@@ -455,6 +463,7 @@ async function loadAll(){
  Object.keys(ALL).forEach(c=>S.names[c]=ALL[c].n);save();
  const fresh=a=>a.filter(c=>S.px[c]&&S.px[c].t===now).length,parts=[];if(tw.length)parts.push('台股 '+fresh(tw)+'/'+tw.length+' 檔已更新');
  if(us.length)parts.push('美股 '+fresh(us)+'/'+us.length+' 檔已更新');
+ {const miss=codes.filter(c=>px(c)==null);if(miss.length)parts.push('查不到現價：'+miss.join('、'))}
  if(us.length||S.fxm)parts.push('匯率 USD/TWD '+(+S.fx).toFixed(3)+(S.fxm?'（手動）':''));
  st.textContent=parts.length?parts.join('；')+'　'+now+'。抓不到的可點現價旁 ✎ 手動輸入。':'';
  if($('#s-fx')&&!S.fxm)$('#s-fx').value=(+S.fx).toFixed(3);
@@ -498,24 +507,24 @@ function renderHold(){
   <td>${pl!=null?`<b class="${cls(pl)}">${sg(pl)}</b><small class="${cls(pl)}">${(pl/o.cost*100).toFixed(2)}%</small>`:'—'}</td>
   <td>${pl!=null?`<b class="${cls(pl+o.div)}">${sg(pl+o.div)}</b><small>股利 ${n0(o.div)}</small>`:'—'}</td>
   <td>${n2(be)}<small>賣出剛好不虧</small></td><td>${n2(t1)}<small>淨賺 ${n0(g)}</small></td><td>${n2(t2)}<small>${o.div?'含息淨賺 '+n0(g):'尚無股利'}</small></td></tr>`}).join('')}</table>`:emptyBox('目前沒有持股，到「買進建檔」放入第一筆');
- const dv=mine('div').sort((a,b)=>b.d.localeCompare(a.d));
- $('#divs').innerHTML=dv.length?`<table style="min-width:460px"><tr><th>發放日</th><th>股票</th><th>每股</th><th>股數</th><th>實領</th><th></th></tr>${dv.map(d=>`<tr>${ctx(d.c)}<td>${d.d}</td><td>${esc(d.c)} ${esc(nameOf(d.c))}${tag(d.c)}</td><td>${d.p}</td><td>${ns(d.s)}</td><td>${n0(d.m)}</td><td style="white-space:nowrap"><button class="x" data-edit="${d.id}">編輯</button> <button class="x" data-del="${d.id}">刪除</button></td></tr>`).join('')}</table>`:'';
+ const dv=S.recs.filter(r=>r.u===S.cur&&(r.t==='div'||r.t==='bonus')).sort((a,b)=>b.d.localeCompare(a.d));
+ $('#divs').innerHTML=dv.length?`<table style="min-width:560px"><tr><th>發放日</th><th>類型</th><th>股票</th><th>每股</th><th>基準股數</th><th>實領／配得</th><th></th></tr>${dv.map(d=>`<tr>${ctx(d.c)}<td>${d.d}</td><td>${d.t==='bonus'?'配股':'現金'}</td><td>${esc(d.c)} ${esc(nameOf(d.c))}${tag(d.c)}</td><td>${d.p}</td><td>${ns(d.s)}</td><td>${d.t==='bonus'?'+'+ns(d.m)+' 股':n0(d.m)}</td><td style="white-space:nowrap"><button class="x" data-edit="${d.id}">編輯</button> <button class="x" data-del="${d.id}">刪除</button></td></tr>`).join('')}</table>`:'';
 }
 function renderQ(){
  const q=$('#qq').value.trim().toLowerCase(),box=$('#qr');
  if(!q){box.innerHTML=`<div class="empty">${deco}<div>輸入代號或名稱，馬上看到買了幾次</div></div>`;return}
  const {H}=ledger(),os=H.filter(o=>o.c.toLowerCase().includes(q)||(o.n||'').toLowerCase().includes(q));
  if(!os.length){box.innerHTML=emptyBox('找不到這支股票的紀錄');return}
- box.innerHTML=os.map(o=>{const r=S.recs.filter(x=>x.u===S.cur&&x.c==o.c&&(x.t==='buy'||x.t==='sell')).sort((a,b)=>a.d.localeCompare(b.d)),p=px(o.c),pl=p!=null&&o.sh?sellNet(o.c,p,o.sh)-o.cost:null;
+ box.innerHTML=os.map(o=>{const r=S.recs.filter(x=>x.u===S.cur&&x.c==o.c&&(x.t==='buy'||x.t==='sell'||x.t==='bonus')).sort((a,b)=>a.d.localeCompare(b.d)),p=px(o.c),pl=p!=null&&o.sh?sellNet(o.c,p,o.sh)-o.cost:null;
   return `<h2>${ctx(o.c)}${esc(o.c)} ${esc(o.n)}${tag(o.c)}　買 ${o.cnt} 次${o.scnt?'、賣 '+o.scnt+' 次':''}</h2><div class="sum"><div><span>剩餘股數</span><b>${ns(o.sh)}</b></div><div><span>剩餘成本／平均成本</span><b style="font-size:1.1rem">${n0(o.cost)}／${o.sh?n2(o.cost/o.sh):'—'}</b></div><div><span>首筆／最近一筆</span><b style="font-size:1rem">${r[0].d}／${r[r.length-1].d}</b></div>${o.scnt?`<div><span>已實現損益</span><b class="${cls(o.real)}">${sg(o.real)}</b></div>`:''}${pl!=null?`<div><span>未實現（不含息／含息）</span><b class="${cls(pl)}" style="font-size:1.1rem">${sg(pl)}／${sg(pl+o.div)}</b></div>`:''}</div>
-  <div class="tw"><table style="min-width:420px"><tr><th>日期</th><th>類型</th><th>價格</th><th>股數</th><th>費用</th></tr>${r.map(b=>`<tr><td>${b.d}</td><td>${b.t=='buy'?'買進':'賣出'}</td><td>${n2(b.p)}</td><td>${ns(b.s)}</td><td>${n0(b.f+b.x)}</td></tr>`).join('')}</table></div>`}).join('')}
+  <div class="tw"><table style="min-width:420px"><tr><th>日期</th><th>類型</th><th>價格</th><th>股數</th><th>費用</th></tr>${r.map(b=>`<tr><td>${b.d}</td><td>${b.t=='buy'?'買進':b.t=='bonus'?'配股':'賣出'}</td><td>${b.t=='bonus'?'—':n2(b.p)}</td><td>${ns(b.t=='bonus'?b.m:b.s)}</td><td>${b.t=='bonus'?'—':n0(b.f+b.x)}</td></tr>`).join('')}</table></div>`}).join('')}
 function renderAll(){
  renderUsers();renderBuys();renderSells();renderHold();renderQ();
  $('#codes').innerHTML=ledger().H.map(o=>`<option value="${esc(o.c)}">${esc(o.n)}</option>`).join('')}
 
 /* ---- 寫入（本機＋雲端） ---- */
 let rev=0; // 本機每改一次就加一，避免舊的雲端資料蓋掉剛改的內容
-function put(r){rev++;const i=S.recs.findIndex(x=>x.id===r.id);i>=0?S.recs[i]=r:S.recs.push(r);save();qop({id:r.id,rec:r});renderAll()}
+function put(r){rev++;const i=S.recs.findIndex(x=>x.id===r.id);i>=0?S.recs[i]=r:S.recs.push(r);save();qop({id:r.id,rec:r});renderAll();ensurePx()}
 function del(id){rev++;if(Object.values(EDIT).includes(id))stopEdit(true);S.recs=S.recs.filter(x=>x.id!==id);save();qop({id,del:1});renderAll()}
 
 /* ---- Google 試算表同步（Apps Script 網頁應用程式） ---- */
@@ -538,7 +547,7 @@ async function pull(first){
   $('#gsver').textContent='雲端程式版本：'+sv+(sv===GSVER?'（最新）':'（不是最新版，請依下方說明重新貼上程式碼並部署新版本）');
   if(first){const ids=new Set(recs.map(r=>r.id)),lo=S.recs.filter(r=>!ids.has(r.id));
    if(lo.length&&confirm('本機有 '+lo.length+' 筆資料雲端還沒有，要上傳嗎？\n（選「取消」將以雲端資料為準，本機多出的資料會被取代）')){lo.forEach(r=>S.q.push({id:r.id,rec:r}));save();if(!(await flush()))return;recs=recs.concat(lo)}}
-  if(JSON.stringify(byId(recs))!==JSON.stringify(byId(S.recs.map(norm)))){S.recs=recs;save();renderAll()}
+  if(JSON.stringify(byId(recs))!==JSON.stringify(byId(S.recs.map(norm)))){S.recs=recs;save();renderAll();ensurePx()}
   recs.forEach(r=>{if(raw.has(r.id)&&raw.get(r.id)!==r.c&&!HEAL.has(r.id)){HEAL.add(r.id);S.q.push({id:r.id,rec:r})}}); // 把雲端被改成數字的代號寫回正確文字
   if(S.q.length){save();flush()}
   setSt('已同步 '+new Date().toLocaleTimeString('zh-TW',{hour12:false})+(sv===GSVER?'':'（雲端程式需升級）'))}
@@ -578,7 +587,7 @@ function stopEdit(clr){
 function startEdit(r){stopEdit(true);const set=v=>{for(const k in v)$(k).value=v[k]};
  if(r.t==='buy'){tab('buy');set({'#fd':r.d,'#fc':r.c,'#fn':r.n,'#fp':r.p,'#fs':r.s,'#ff':r.f});EDIT.buy=r.id;feeT=true;$('#add').textContent='儲存修改';$('#cancelb').hidden=false;$('#fnote').textContent='編輯中：改完請按「儲存修改」';$('#fd').scrollIntoView({block:'center'})}
  else if(r.t==='sell'){tab('sell');set({'#sd':r.d,'#sc':r.c,'#sn':r.n,'#sp':r.p,'#ss':r.s,'#sf':r.f,'#sx':r.x});EDIT.sell=r.id;sfT=sxT=true;$('#adds').textContent='儲存修改';$('#cancels').hidden=false;$('#snote').textContent='編輯中：改完請按「儲存修改」';$('#sd').scrollIntoView({block:'center'})}
- else if(r.t==='div'){tab('hold');set({'#dd':r.d,'#dc':r.c,'#dp':r.p,'#ds':r.s,'#dt':r.m});$('#dt').dataset.m=1;EDIT.div=r.id;$('#addd').textContent='儲存修改';$('#canceld').hidden=false;$('#dd').scrollIntoView({block:'center'})}}
+ else if(r.t==='div'||r.t==='bonus'){tab('hold');$('#dk').value=r.t;dkUpd();set({'#dd':r.d,'#dc':r.c,'#dp':r.p,'#ds':r.s,'#dt':r.m});$('#dt').dataset.m=1;EDIT.div=r.id;$('#addd').textContent='儲存修改';$('#canceld').hidden=false;$('#dd').scrollIntoView({block:'center'})}}
 $('#cancelb').onclick=$('#cancels').onclick=$('#canceld').onclick=()=>stopEdit(true);
 $('#add').onclick=()=>{
  const d=$('#fd').value,c=$('#fc').value.trim().toUpperCase(),p=+$('#fp').value,s=+$('#fs').value;
@@ -598,20 +607,24 @@ $('#adds').onclick=()=>{
  const f=$('#sf').value===''?fee(p*s,c):+$('#sf').value,x=$('#sx').value===''?tax(c,p*s):+$('#sx').value;
  put(mk(Object.assign({t:'sell',d,c,n:$('#sn').value.trim()||o.n,p,s,f,x},EDIT.sell?{id:EDIT.sell}:{})));
  ['#sc','#sn','#sp','#ss','#sf','#sx'].forEach(i=>$(i).value='');$('#snote').textContent='';const ed=EDIT.sell;stopEdit();toast(ed?'已儲存修改，同步到雲端中…':'已記下賣出')};
-const dcalc=()=>{if(!$('#dt').dataset.m){const c=$('#dc').value.trim().toUpperCase(),r=(+$('#dp').value)*(+$('#ds').value),v=isUS(c)?Math.round(r*100)/100:Math.round(r);$('#dt').value=v>0?v:''}};
+const dkUpd=()=>{const b=$('#dk').value==='bonus';$('#dpl').textContent=b?'每股股票股利（元，面額10元）':'每股現金股利';$('#dtl').textContent=b?'配得股數（可修改）':'實領金額（可修改）';
+ $('#dkn').textContent=b?'配得股數 ＝ 基準股數 × 每股股票股利 ÷ 10（取整數，可自行修改）。配股不增加成本，平均成本會因股數變多而下降。':'實領金額 ＝ 每股現金股利 × 領息股數；若有扣補充保費，請直接改成實際入帳的金額。'};
+const dcalc=()=>{if($('#dt').dataset.m)return;const c=$('#dc').value.trim().toUpperCase(),r=(+$('#dp').value)*(+$('#ds').value);let v;if($('#dk').value==='bonus')v=Math.floor(+(r/10).toFixed(6));else v=isUS(c)?Math.round(r*100)/100:Math.round(r);$('#dt').value=v>0?v:''};
+$('#dk').onchange=()=>{dkUpd();delete $('#dt').dataset.m;dcalc()};dkUpd();
+$('#godiv').onclick=()=>$('#dd').scrollIntoView({block:'center'});
 $('#dc').onchange=()=>{const c=$('#dc').value.trim().toUpperCase();$('#dc').value=c;const o=ledger().H.find(x=>x.c==c);if(o&&o.sh&&!$('#ds').value){$('#ds').value=o.sh;dcalc()}};
 $('#dp').oninput=$('#ds').oninput=dcalc;$('#dt').oninput=()=>$('#dt').dataset.m=1;
 $('#addd').onclick=()=>{
- const d=$('#dd').value,c=$('#dc').value.trim().toUpperCase(),p=+$('#dp').value,s=+$('#ds').value,m=+$('#dt').value;
- if(!d||!c||!(m>0)){toast('請填寫發放日、代號與金額');return}
- put(mk(Object.assign({t:'div',d,c,p,s,m},EDIT.div?{id:EDIT.div}:{})));['#dc','#dp','#ds','#dt'].forEach(i=>{$(i).value='';delete $(i).dataset.m});const ed=EDIT.div;stopEdit();toast(ed?'已儲存修改，同步到雲端中…':'已記下股利')};
+ const k=$('#dk').value,d=$('#dd').value,c=$('#dc').value.trim().toUpperCase(),p=+$('#dp').value,s=+$('#ds').value,m=+$('#dt').value;
+ if(!d||!c||!(m>0)){toast(k==='bonus'?'請填寫發放日、代號與配得股數':'請填寫發放日、代號與金額');return}
+ put(mk(Object.assign({t:k,d,c,p,s,m},EDIT.div?{id:EDIT.div}:{})));['#dc','#dp','#ds','#dt'].forEach(i=>{$(i).value='';delete $(i).dataset.m});const ed=EDIT.div;stopEdit();toast(ed?'已儲存修改，同步到雲端中…':k==='bonus'?'已記下配股':'已記下股利')};
 document.addEventListener('click',e=>{
  const t=e.target.closest('button');if(!t)return;
  if(t.dataset.edit){const r=S.recs.find(x=>x.id===t.dataset.edit);if(r)startEdit(r)}
- if(t.dataset.del){const r=S.recs.find(x=>x.id===t.dataset.del);if(r&&confirm('⚠ 確定要刪除這筆'+({buy:'買進',sell:'賣出',div:'股利'}[r.t]||'')+'紀錄嗎？\n\n'+r.d+'　'+r.c+' '+(r.n||'')+'\n'+(r.t==='div'?'實領金額 '+r.m:r.p+' × '+ns(r.s)+' 股')+'\n\n刪除後無法復原；若已連線雲端，試算表裡的這筆也會一起刪除。'))del(t.dataset.del)}
+ if(t.dataset.del){const r=S.recs.find(x=>x.id===t.dataset.del);if(r&&confirm('⚠ 確定要刪除這筆'+({buy:'買進',sell:'賣出',div:'股利',bonus:'配股'}[r.t]||'')+'紀錄嗎？\n\n'+r.d+'　'+r.c+' '+(r.n||'')+'\n'+(r.t==='div'?'實領金額 '+r.m:r.t==='bonus'?'配得 '+ns(r.m)+' 股':r.p+' × '+ns(r.s)+' 股')+'\n\n刪除後無法復原；若已連線雲端，試算表裡的這筆也會一起刪除。'))del(t.dataset.del)}
  if(t.dataset.px){const v=prompt('輸入 '+t.dataset.px+' 的現價',px(t.dataset.px)||'');if(v!==null&&+v>0){S.px[t.dataset.px]={p:+v,t:'',m:1};save();renderAll()}}
  if(t.dataset.u){stopEdit(true);S.cur=t.dataset.u;save();renderAll();toast('已切換到 '+uname(S.cur))}});
-$('#qq').oninput=renderQ;$('#refresh').onclick=loadAll;
+$('#qq').oninput=renderQ;$('#refresh').onclick=()=>{TRIED.clear();loadAll()};
 $('#tgt').oninput=()=>{S.tgt=Math.max(0,+$('#tgt').value||0);save();renderHold()};
 ['u1','u2'].forEach(u=>$('#'+u+'n').onchange=()=>{const v=$('#'+u+'n').value.trim();if(!v)return;const old=S.recs.find(r=>r.t==='user'&&r.u===u);const prev=S.cur;S.cur=u;put(mk({id:old?old.id:'user:'+u,u,t:'user',n:v}));S.cur=prev;save();renderAll()});
 
@@ -625,14 +638,15 @@ const rd=v=>Math.round(v*100)/100;
 const buyRows=()=>[['日期','股票代號','股票名稱','購入價格','購入股數','手續費'],...mine('buy').map(b=>[b.d,b.c,b.n,b.p,b.s,b.f])];
 $('#e-buys').onclick=()=>csv(buyRows(),'購入紀錄.csv');
 $('#e-sells').onclick=()=>csv([['日期','股票代號','股票名稱','賣出價格','賣出股數','手續費','證交稅','淨收入','賣出股數的買入成本','已實現損益'],...ledger().sells.map(r=>[r.d,r.c,r.n,r.p,r.s,r.f,r.x,rd(r.net),rd(r.out),rd(r.rl)])],'賣出紀錄.csv');
-$('#e-divs').onclick=()=>csv([['發放日','股票代號','每股股利','領息股數','實領金額'],...mine('div').map(d=>[d.d,d.c,d.p,d.s,d.m])],'股利紀錄.csv');
+$('#e-divs').onclick=()=>csv([['發放日','類型','股票代號','每股股利或股票股利','基準股數','實領金額或配得股數'],...S.recs.filter(r=>r.u===S.cur&&(r.t==='div'||r.t==='bonus')).map(d=>[d.d,d.t==='bonus'?'配股':'現金股利',d.c,d.p,d.s,d.m])],'股利紀錄.csv');
 $('#e-hold').onclick=()=>{const t=S.tgt/100;csv([['股票代號','股票名稱','購入次數','賣出次數','剩餘股數','剩餘成本','平均成本','現價','不含息損益','含息損益','累計股利','已實現損益','回本賣價','目標賣價(不含息)','目標賣價(含息)'],...ledger().H.filter(o=>o.sh>0).map(o=>{const p=px(o.c),pl=p!=null?rd(sellNet(o.c,p,o.sh)-o.cost):'',g=o.cost*t;return[o.c,o.n,o.cnt,o.scnt,o.sh,rd(o.cost),(o.cost/o.sh).toFixed(2),p??'',pl,pl===''?'':pl+o.div,o.div,rd(o.real),priceFor(o.c,o.sh,o.cost),priceFor(o.c,o.sh,o.cost+g),priceFor(o.c,o.sh,Math.max(0,o.cost+g-o.div))]})],'庫存損益.csv')};
 $('#e-copy').onclick=async()=>{const tx=buyRows().map(r=>r.join('\t')).join('\n');try{await navigator.clipboard.writeText(tx)}catch(e){const a=document.createElement('textarea');a.value=tx;document.body.append(a);a.select();document.execCommand('copy');a.remove()}toast('已複製，到試算表貼上即可')};
 $('#e-json').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:'application/json'}));a.download='FuAmigo備份.json';a.click()};
 $('#i-json').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{S=Object.assign(DEF(),JSON.parse(r.result));save();location.reload()}catch(x){toast('備份檔無法讀取')}};r.readAsText(f)};
 
 /* ---- 分頁與主題 ---- */
-function tab(k){document.querySelectorAll('.panel').forEach(p=>p.hidden=p.id!=='p-'+k);document.querySelectorAll('nav button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab==k))}
+function tab(k){if(k==='hold'){ensurePx();if(Date.now()-LASTPX>3e5)loadAll()}
+document.querySelectorAll('.panel').forEach(p=>p.hidden=p.id!=='p-'+k);document.querySelectorAll('nav button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab==k))}
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>tab(b.dataset.tab));
 function theme(t){S.theme=t;document.documentElement.dataset.t=t;document.querySelectorAll('[data-th]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.th==t));save()}
 document.querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>theme(b.dataset.th));
