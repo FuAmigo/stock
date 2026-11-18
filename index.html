@@ -227,12 +227,18 @@ textarea{font:.78rem/1.4 monospace;width:100%;height:150px;border:2px solid var(
 const SHEET = 'records', COLS = ['id','u','t','d','c','n','p','s','f','x','m','upd'];
 function sheet_() {
   var ss = SpreadsheetApp.openById(SHEET_ID), s = ss.getSheetByName(SHEET);
-  if (!s) {
-    s = ss.insertSheet(SHEET);
-    s.appendRow(COLS);
-    s.setFrozenRows(1);
+  if (!s) { s = ss.insertSheet(SHEET); s.appendRow(COLS); s.setFrozenRows(1); }
+  if (s.getRange('E1').getNumberFormat() !== '@') { // 把 id、日期、代號等欄位固定為純文字，避免 0052 變成 52、日期變成日期格式
+    var last = s.getLastRow(), vals = last > 1 ? s.getRange(2, 1, last - 1, 6).getValues() : [];
     s.getRange('A:F').setNumberFormat('@');
     s.getRange('L:L').setNumberFormat('@');
+    if (vals.length) {
+      var tz = ss.getSpreadsheetTimeZone();
+      vals = vals.map(function (r) {
+        return r.map(function (v) { return v instanceof Date ? Utilities.formatDate(v, tz, 'yyyy-MM-dd') : String(v); });
+      });
+      s.getRange(2, 1, vals.length, 6).setValues(vals);
+    }
   }
   return s;
 }
@@ -243,11 +249,11 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.q === 'quote') {
     return out_({ ok: 1, q: quote_(String(e.parameter.codes || '').split(',').filter(String).slice(0, 40)) });
   }
-  var v = sheet_().getDataRange().getValues(), h = v.shift(), recs = [];
+  var s = sheet_(), tz = s.getParent().getSpreadsheetTimeZone(), v = s.getDataRange().getValues(), h = v.shift(), recs = [];
   v.forEach(function (r) {
     if (r[0] !== '') {
       var o = {};
-      h.forEach(function (k, i) { o[k] = r[i]; });
+      h.forEach(function (k, i) { o[k] = r[i] instanceof Date ? Utilities.formatDate(r[i], tz, 'yyyy-MM-dd') : r[i]; });
       recs.push(o);
     }
   });
@@ -336,8 +342,9 @@ function quote_(codes) {
   <p class="note" style="margin-top:0">資料存在這台電腦的瀏覽器裡，換電腦或清除瀏覽資料前，請先備份。</p>
   <div class="row"><button class="btn" id="e-json">下載備份檔</button><label style="width:240px">還原備份檔<input type="file" id="i-json" accept=".json"></label></div>
  </div>
-<div class="card"><h2>版本說明　v1.5.1（2026-11-18）</h2>
+<div class="card"><h2>版本說明　v1.5.2（2026-11-18）</h2>
   <ul class="note" style="line-height:1.9;padding-left:20px;margin:0">
+   <li><b>v1.5.2</b>　修正試算表裡代號 0052 變成 52、日期被轉成日期格式的問題（雲端程式會把相關欄位固定為純文字並自動修復舊資料）；網頁會依名單補回常見代號的前導 0；點右上角的同步狀態可立即同步。</li>
    <li><b>v1.5.1</b>　修正編輯後資料被舊的雲端內容蓋回去的問題（雲端同步的時間差）；編輯、刪除、新增在雲端確認前，不會再被舊資料覆蓋。</li>
    <li><b>v1.5</b>　股票名稱查詢大幅加強：內建約 120 檔常見台股與 ETF 名稱（輸入代號立即帶入）；雲端程式新增查詢功能，由 Google 伺服器代查台股、美股名稱與價格，不受瀏覽器限制；庫存頁更新股價也會用雲端補查。</li>
    <li><b>v1.4</b>　台股代號可直接查詢名稱與價格（不必先有買進紀錄，多個來源備援）；買進、賣出、股利紀錄都能編輯；刪除前會跳出警示並顯示該筆內容。</li>
@@ -374,7 +381,8 @@ const cls=v=>v>0?'up':v<0?'dn':'';
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const today=()=>{const d=new Date();return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),1800)}
-const norm=o=>({id:String(o.id),u:String(o.u),t:String(o.t),d:String(o.d||'').slice(0,10),c:String(o.c||''),n:String(o.n||''),p:+o.p||0,s:+o.s||0,f:+o.f||0,x:+o.x||0,m:+o.m||0});
+const fixCode=c=>{if(!/^\d+$/.test(c)||c[0]==='0')return c;for(const z of ['0','00','000'])if(BUILTIN[z+c])return z+c;return c.length<4?('0000'+c).slice(-4):c};
+const norm=o=>({id:String(o.id),u:String(o.u),t:String(o.t),d:String(o.d||'').slice(0,10),c:fixCode(String(o.c||'')),n:String(o.n||''),p:+o.p||0,s:+o.s||0,f:+o.f||0,x:+o.x||0,m:+o.m||0});
 const mk=o=>norm(Object.assign({id:uid(),u:S.cur},o));
 const mine=t=>S.recs.filter(r=>r.u===S.cur&&r.t===t);
 const uname=u=>(S.recs.find(r=>r.t==='user'&&r.u===u)||{}).n||(u==='u1'?'A 帳本':'B 帳本');
@@ -526,7 +534,7 @@ async function pull(first){
  catch(e){setSt('無法連線雲端，請檢查網址與部署權限')}}
 setInterval(()=>{if(!document.hidden)pull()},10000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)pull()});
-$('#s-url').value=S.url;
+$('#s-url').value=S.url;$('#sync').style.cursor='pointer';$('#sync').title='點一下立即同步';$('#sync').onclick=()=>pull();
 $('#s-url').onchange=()=>{S.url=$('#s-url').value.trim();save();pull(true)};
 $('#e-gs').onclick=async()=>{const t=$('#gscode');t.select();try{await navigator.clipboard.writeText(t.value)}catch(e){document.execCommand('copy')}toast('程式碼已複製')};
 
@@ -619,6 +627,7 @@ function theme(t){S.theme=t;document.documentElement.dataset.t=t;document.queryS
 document.querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>theme(b.dataset.th));
 theme(S.theme);tab('buy');
 ['#fd','#dd','#sd'].forEach(i=>$(i).value=today());$('#tgt').value=S.tgt;
+S.recs.forEach(r=>{r.c=fixCode(r.c)});
 renderAll();loadAll();pull();
 </script>
 </body>
