@@ -351,8 +351,9 @@ function quote_(codes) {
   <p class="note" style="margin-top:0">資料存在這台電腦的瀏覽器裡，換電腦或清除瀏覽資料前，請先備份。</p>
   <div class="row"><button class="btn" id="e-json">下載備份檔</button><label style="width:240px">還原備份檔<input type="file" id="i-json" accept=".json"></label></div>
  </div>
-<div class="card"><h2>版本說明　v1.6.1（2026-11-18）</h2>
+<div class="card"><h2>版本說明　v1.6.2（2026-11-19）</h2>
   <ul class="note" style="line-height:1.9;padding-left:20px;margin:0">
+   <li><b>v1.6.2</b>　單股查詢加強：顯示現價（可手動輸入）、市值、預估賣出費用、累計現金股利、累計配股，並寫出未實現損益的算法；明細表新增成交金額、費用（含稅）與累計股數，底部列出買進、增資認股、配股、賣出的累計股數。</li>
    <li><b>v1.6.1</b>　買進建檔新增「類型」：買進／增資認股。增資認股的手續費預設 0，認購價欄位會改成「認購價」；購入紀錄、庫存、單股查詢、CSV 匯出都會標示「增資認股」，買進次數與認股次數分開計算，成本與平均成本照常計入。</li>
    <li><b>v1.6</b>　新增「配股」（股票股利）：庫存股數增加、成本不變、平均成本下降；股利與配股統一在庫存損益頁下方的「記錄股利與配股」輸入，也可從「記錄股利／配股」按鈕直接跳過去；新增的股票會自動補抓現價，開啟庫存頁超過 5 分鐘也會自動更新，查不到的會在狀態列列出代號。</li>
    <li><b>v1.5.3</b>　雲端程式改成每次寫入前先把 id、日期、代號設為純文字，並自動修復舊資料（0052 不再變 52、日期不再差一天）；設定頁會顯示雲端程式版本，不是最新版時會提醒；網頁會把被改成數字的代號寫回雲端。</li>
@@ -415,7 +416,7 @@ function ledger(ex){
  const ev=S.recs.filter(r=>r.u===S.cur&&r.id!==ex&&(r.t==='buy'||r.t==='sub'||r.t==='sell'||r.t==='bonus')).sort((a,b)=>(a.d+(a.t==='sell'?1:0)+a.id).localeCompare(b.d+(b.t==='sell'?1:0)+b.id));
  ev.forEach(r=>{const o=H[r.c]||(H[r.c]={c:r.c,n:r.n,sh:0,cost:0,cnt:0,scnt:0,real:0,div:0});if(r.n)o.n=r.n;
   if(r.t==='buy'||r.t==='sub'){o.sh+=r.s;o.cost+=r.p*r.s+r.f;if(r.t==='buy')o.cnt++;else o.subcnt=(o.subcnt||0)+1}
-  else if(r.t==='bonus'){o.sh+=r.m}
+  else if(r.t==='bonus'){o.sh+=r.m;o.bsh=(o.bsh||0)+r.m;o.bcnt=(o.bcnt||0)+1}
   else{const q=Math.min(r.s,o.sh),out=o.sh>0?o.cost*q/o.sh:0,net=r.p*r.s-r.f-r.x,rl=net-out;o.sh-=q;o.cost-=out;o.scnt++;o.real+=rl;sells.push({...r,net,out,rl})}});
  S.recs.forEach(r=>{if(r.u===S.cur&&r.t==='div'&&H[r.c])H[r.c].div+=r.m});
  Object.values(H).forEach(o=>{if(o.sh<=1e-9){o.sh=0;o.cost=0}});
@@ -517,9 +518,30 @@ function renderQ(){
  if(!q){box.innerHTML=`<div class="empty">${deco}<div>輸入代號或名稱，馬上看到買了幾次</div></div>`;return}
  const {H}=ledger(),os=H.filter(o=>o.c.toLowerCase().includes(q)||(o.n||'').toLowerCase().includes(q));
  if(!os.length){box.innerHTML=emptyBox('找不到這支股票的紀錄');return}
- box.innerHTML=os.map(o=>{const r=S.recs.filter(x=>x.u===S.cur&&x.c==o.c&&(x.t==='buy'||x.t==='sub'||x.t==='sell'||x.t==='bonus')).sort((a,b)=>a.d.localeCompare(b.d)),p=px(o.c),pl=p!=null&&o.sh?sellNet(o.c,p,o.sh)-o.cost:null;
-  return `<h2>${ctx(o.c)}${esc(o.c)} ${esc(o.n)}${tag(o.c)}　買 ${o.cnt} 次${o.subcnt?'、增資認股 '+o.subcnt+' 次':''}${o.scnt?'、賣 '+o.scnt+' 次':''}</h2><div class="sum"><div><span>剩餘股數</span><b>${ns(o.sh)}</b></div><div><span>剩餘成本／平均成本</span><b style="font-size:1.1rem">${n0(o.cost)}／${o.sh?n2(o.cost/o.sh):'—'}</b></div><div><span>首筆／最近一筆</span><b style="font-size:1rem">${r[0].d}／${r[r.length-1].d}</b></div>${o.scnt?`<div><span>已實現損益</span><b class="${cls(o.real)}">${sg(o.real)}</b></div>`:''}${pl!=null?`<div><span>未實現（不含息／含息）</span><b class="${cls(pl)}" style="font-size:1.1rem">${sg(pl)}／${sg(pl+o.div)}</b></div>`:''}</div>
-  <div class="tw"><table style="min-width:420px"><tr><th>日期</th><th>類型</th><th>價格</th><th>股數</th><th>費用</th></tr>${r.map(b=>`<tr><td>${b.d}</td><td>${{buy:'買進',sub:'增資認股',bonus:'配股',sell:'賣出'}[b.t]||b.t}</td><td>${b.t=='bonus'?'—':n2(b.p)}</td><td>${ns(b.t=='bonus'?b.m:b.s)}</td><td>${b.t=='bonus'?'—':n0(b.f+b.x)}</td></tr>`).join('')}</table></div>`}).join('')}
+ const ord=t=>t==='sell'?1:0,TN={buy:'買進',sub:'增資認股',bonus:'配股',sell:'賣出'};
+ box.innerHTML=os.map(o=>{
+  const r=S.recs.filter(x=>x.u===S.cur&&x.c==o.c&&(x.t==='buy'||x.t==='sub'||x.t==='sell'||x.t==='bonus')).sort((a,b)=>(a.d+ord(a.t)+a.id).localeCompare(b.d+ord(b.t)+b.id));
+  const p=px(o.c),has=p!=null&&o.sh>0,mv=has?p*o.sh:null,sf=has?fee(p*o.sh,o.c)+tax(o.c,p*o.sh):null,pl=has?sellNet(o.c,p,o.sh)-o.cost:null;
+  const card=(l,v,c)=>`<div><span>${l}</span><b${c?` class="${c}"`:''} style="font-size:1.1rem">${v}</b></div>`;
+  const sum={buy:0,sub:0,bonus:0,sell:0};r.forEach(b=>{sum[b.t]+=b.t==='bonus'?b.m:b.s});
+  let run=0;
+  return `<h2>${ctx(o.c)}${esc(o.c)} ${esc(o.n)}${tag(o.c)}　買 ${o.cnt} 次${o.subcnt?'、增資認股 '+o.subcnt+' 次':''}${o.bcnt?'、配股 '+o.bcnt+' 次':''}${o.scnt?'、賣 '+o.scnt+' 次':''}</h2>
+  <div class="sum">${card('剩餘股數',ns(o.sh))}
+   ${card('現價',p!=null?n2(p)+` <button class="x" data-px="${esc(o.c)}" title="手動輸入現價">✎</button>`:`— <button class="x" data-px="${esc(o.c)}" title="手動輸入現價">✎</button>`)}
+   ${card('市值（現價×剩餘股數）',has?n0(mv):'—')}
+   ${card('剩餘成本／平均成本',n0(o.cost)+'／'+(o.sh?n2(o.cost/o.sh):'—'))}
+   ${card('預估賣出費用（手續費＋稅）',has?n0(sf):'—')}
+   ${card('未實現（不含息）',has?sg(pl):'—',has?cls(pl):'')}
+   ${card('累計現金股利',n0(o.div))}
+   ${card('未實現（含息）',has?sg(pl+o.div):'—',has?cls(pl+o.div):'')}
+   ${o.bcnt?card('累計配股',ns(o.bsh)+' 股（'+o.bcnt+' 次）'):''}
+   ${o.scnt?card('已實現損益（不含息）',sg(o.real),cls(o.real)):''}
+   ${card('首筆／最近一筆',r[0].d+'／'+r[r.length-1].d)}</div>
+  <p class="note" style="margin:0 0 10px">${has?'未實現（不含息）＝ 市值 − 預估賣出費用 − 剩餘成本；含息 ＝ 再加上累計現金股利。現價'+(S.px[o.c]&&S.px[o.c].m?'為手動輸入':S.px[o.c]&&S.px[o.c].t?'更新於 '+S.px[o.c].t:'')+'。配股只增加股數，不增加成本。':'目前沒有現價，無法計算未實現損益：到「庫存損益」按「更新股價」，或點上方現價旁的 ✎ 手動輸入。'}</p>
+  <div class="tw"><table style="min-width:640px"><tr><th>日期</th><th>類型</th><th>價格</th><th>股數</th><th>成交金額</th><th>費用（含稅）</th><th>累計股數</th></tr>${r.map(b=>{const bn=b.t==='bonus',sl=b.t==='sell';run+=bn?b.m:sl?-b.s:b.s;
+   return `<tr><td>${b.d}</td><td>${TN[b.t]||b.t}</td><td>${bn?'—':n2(b.p)}</td><td>${sl?'−':'+'}${ns(bn?b.m:b.s)}</td><td>${bn?'—':n0(b.p*b.s)}</td><td>${bn?'—':n0(b.f+b.x)}</td><td>${ns(run)}</td></tr>`}).join('')}</table></div>
+  <p class="note">累計：買進 ${ns(sum.buy)} 股　增資認股 ${ns(sum.sub)} 股　配股 ${ns(sum.bonus)} 股　賣出 ${ns(sum.sell)} 股</p>`}).join('')}
+
 function renderAll(){
  renderUsers();renderBuys();renderSells();renderHold();renderQ();
  $('#codes').innerHTML=ledger().H.map(o=>`<option value="${esc(o.c)}">${esc(o.n)}</option>`).join('')}
