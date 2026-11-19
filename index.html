@@ -58,6 +58,7 @@ td small{display:block;color:var(--soft);font-size:.75rem}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 20px;border-radius:20px;opacity:0;pointer-events:none;z-index:9}
 #toast.on{opacity:1}
 .panel[hidden]{display:none}
+.calc{border:2px dashed var(--line);border-radius:20px;padding:12px 14px;margin:12px 0}
 .fa{fill:var(--a)}.fb{fill:var(--b)}.fc{fill:var(--c)}.fp{fill:var(--paper)}.fl{fill:var(--line)}.st{stroke:var(--ink);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
 .users{position:absolute;left:14px;bottom:10px;display:flex;gap:6px}.users button{font:inherit;font-size:.9rem;color:var(--ink);background:var(--paper);border:2px solid var(--ink);border-radius:16px;padding:1px 14px;cursor:pointer}.users button[aria-pressed=true]{background:var(--a);box-shadow:2px 2px 0 var(--ink)}.users button:before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;border:1.5px solid var(--ink);margin-right:6px}.users [data-u=u1]:before{background:#f6a58f}.users [data-u=u2]:before{background:#86bde6}
 textarea{font:.78rem/1.4 monospace;width:100%;height:150px;border:2px solid var(--line);border-radius:14px;padding:8px;color:var(--ink);background:#fff}
@@ -351,8 +352,9 @@ function quote_(codes) {
   <p class="note" style="margin-top:0">資料存在這台電腦的瀏覽器裡，換電腦或清除瀏覽資料前，請先備份。</p>
   <div class="row"><button class="btn" id="e-json">下載備份檔</button><label style="width:240px">還原備份檔<input type="file" id="i-json" accept=".json"></label></div>
  </div>
-<div class="card"><h2>版本說明　v1.6.2（2026-11-19）</h2>
+<div class="card"><h2>版本說明　v1.7（2026-11-19）</h2>
   <ul class="note" style="line-height:1.9;padding-left:20px;margin:0">
+   <li><b>v1.7</b>　單股查詢新增「賣出試算」：可設定賣出股數與目標淨賺（% 或金額），算出回本賣價與目標賣價（不含息／含息），已扣買入成本、賣出手續費與證交稅；明細表「費用」改為「手續費」，另列「證交稅」欄。</li>
    <li><b>v1.6.2</b>　單股查詢加強：顯示現價（可手動輸入）、市值、預估賣出費用、累計現金股利、累計配股，並寫出未實現損益的算法；明細表新增成交金額、費用（含稅）與累計股數，底部列出買進、增資認股、配股、賣出的累計股數。</li>
    <li><b>v1.6.1</b>　買進建檔新增「類型」：買進／增資認股。增資認股的手續費預設 0，認購價欄位會改成「認購價」；購入紀錄、庫存、單股查詢、CSV 匯出都會標示「增資認股」，買進次數與認股次數分開計算，成本與平均成本照常計入。</li>
    <li><b>v1.6</b>　新增「配股」（股票股利）：庫存股數增加、成本不變、平均成本下降；股利與配股統一在庫存損益頁下方的「記錄股利與配股」輸入，也可從「記錄股利／配股」按鈕直接跳過去；新增的股票會自動補抓現價，開啟庫存頁超過 5 分鐘也會自動更新，查不到的會在狀態列列出代號。</li>
@@ -376,7 +378,7 @@ function quote_(codes) {
 
 <script>
 const $=s=>document.querySelector(s);
-const DEF=()=>({recs:[],px:{},names:{},tgt:10,theme:'',cur:'u1',url:'',q:[],fx:32,fxm:0,key:'',set:{disc:6,min:20,tax:0.3,etf:0.1,usFee:0,usMin:0,usTax:0}});
+const DEF=()=>({recs:[],px:{},names:{},tgt:10,theme:'',cur:'u1',url:'',q:[],fx:32,fxm:0,key:'',qc:{},set:{disc:6,min:20,tax:0.3,etf:0.1,usFee:0,usMin:0,usTax:0}});
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 let S;try{S=Object.assign(DEF(),JSON.parse(localStorage.getItem('pigStock')||'{}'));S.set=Object.assign(DEF().set,S.set)}catch(e){S=DEF()}
 if(S.buys||S.divs){ // 舊版資料搬進「小豬」
@@ -513,6 +515,22 @@ function renderHold(){
  const dv=S.recs.filter(r=>r.u===S.cur&&(r.t==='div'||r.t==='bonus')).sort((a,b)=>b.d.localeCompare(a.d));
  $('#divs').innerHTML=dv.length?`<table style="min-width:560px"><tr><th>發放日</th><th>類型</th><th>股票</th><th>每股</th><th>基準股數</th><th>實領／配得</th><th></th></tr>${dv.map(d=>`<tr>${ctx(d.c)}<td>${d.d}</td><td>${d.t==='bonus'?'配股':'現金'}</td><td>${esc(d.c)} ${esc(nameOf(d.c))}${tag(d.c)}</td><td>${d.p}</td><td>${ns(d.s)}</td><td>${d.t==='bonus'?'+'+ns(d.m)+' 股':n0(d.m)}</td><td style="white-space:nowrap"><button class="x" data-edit="${d.id}">編輯</button> <button class="x" data-del="${d.id}">刪除</button></td></tr>`).join('')}</table>`:'';
 }
+function qCompute(o){
+ const st=S.qc[o.c]||{},s0=+st.sh,sh=s0>0?Math.min(s0,o.sh):o.sh,costS=o.cost*sh/o.sh,divS=o.div*sh/o.sh;
+ let g,pct;if(st.by==='amt'&&st.amt!==''&&st.amt!==undefined&&+st.amt>=0){g=+st.amt;pct=costS?g/costS*100:0}else{pct=st.pct!==undefined&&st.pct!==''?+st.pct:S.tgt;g=costS*pct/100}
+ const be=priceFor(o.c,sh,costS),t1=priceFor(o.c,sh,costS+g),t2=priceFor(o.c,sh,Math.max(0,costS+g-divS));
+ const gross=t1*sh,f=fee(gross,o.c),tx=tax(o.c,gross),net=gross-f-tx;
+ return{sh,costS,divS,g,pct,be,t1,t2,gross,f,tx,net,profit:net-costS}}
+function qHtml(o,k){ctx(o.c);const p=px(o.c);
+ return `<div class="sum" style="margin:10px 0 0"><div><span>回本賣價（不賺不賠）</span><b>${n2(k.be)}</b></div><div><span>目標賣價（不含息）</span><b class="up">${n2(k.t1)}</b></div><div><span>目標賣價（含息）</span><b class="up">${n2(k.t2)}</b></div></div>
+ <p class="note">以 ${ns(k.sh)} 股、每股 ${n2(k.t1)} 賣出：成交金額 ${n0(k.gross)}，扣賣出手續費 ${n0(k.f)}、證交稅 ${n0(k.tx)}，淨收入 ${n0(k.net)}；再扣這 ${ns(k.sh)} 股的買入成本 ${n0(k.costS)}（含買進手續費），淨賺 ${n0(k.profit)}（${k.costS?(k.profit/k.costS*100).toFixed(2):0}%）。${k.divS>0?'含息目標：已領現金股利約 '+n0(k.divS)+' 可抵成本，所以賣價可以更低。':''}${p!=null?(k.t1<=p?' 現價 '+n2(p)+' 已達目標賣價。':' 現價 '+n2(p)+'，距離目標賣價還需上漲 '+((k.t1/p-1)*100).toFixed(2)+'%。'):''}</p>`}
+function qUpdate(c){
+ const o=ledger().H.find(x=>x.c===c);if(!o||!(o.sh>0))return;const k=qCompute(o),box=$('#qr');
+ const out=box.querySelector('[data-qout="'+c+'"]');if(out)out.innerHTML=qHtml(o,k);
+ const setv=(q,v)=>{const el=box.querySelector('[data-c="'+c+'"][data-q="'+q+'"]');if(el&&el!==document.activeElement)el.value=v};
+ setv('pct',+k.pct.toFixed(2));setv('amt',Math.round(k.g*100)/100)}
+$('#qr').addEventListener('input',e=>{const t=e.target,c=t.dataset&&t.dataset.c,q=t.dataset&&t.dataset.q;if(!c||!q)return;
+ const st=S.qc[c]||(S.qc[c]={});st[q]=t.value;if(q==='pct'||q==='amt')st.by=q;save();qUpdate(c)});
 function renderQ(){
  const q=$('#qq').value.trim().toLowerCase(),box=$('#qr');
  if(!q){box.innerHTML=`<div class="empty">${deco}<div>輸入代號或名稱，馬上看到買了幾次</div></div>`;return}
@@ -525,6 +543,12 @@ function renderQ(){
   const card=(l,v,c)=>`<div><span>${l}</span><b${c?` class="${c}"`:''} style="font-size:1.1rem">${v}</b></div>`;
   const sum={buy:0,sub:0,bonus:0,sell:0};r.forEach(b=>{sum[b.t]+=b.t==='bonus'?b.m:b.s});
   let run=0;
+  const k=o.sh>0?qCompute(o):null,st=S.qc[o.c]||{},ec=esc(o.c);
+  const calc=k?`<div class="calc"><b>賣出試算：要賣多少才達到目標淨賺</b><div class="grid" style="margin-top:8px">
+   <label>賣出股數（空白＝全部 ${ns(o.sh)} 股）<input type="number" step="any" min="0" data-c="${ec}" data-q="sh" value="${st.sh||''}"></label>
+   <label>目標淨賺（%）<input type="number" step="0.1" min="0" data-c="${ec}" data-q="pct" value="${+k.pct.toFixed(2)}"></label>
+   <label>或直接填目標淨賺金額<input type="number" step="any" min="0" data-c="${ec}" data-q="amt" value="${Math.round(k.g*100)/100}"></label></div>
+   <div data-qout="${ec}">${qHtml(o,k)}</div></div>`:'';
   return `<h2>${ctx(o.c)}${esc(o.c)} ${esc(o.n)}${tag(o.c)}　買 ${o.cnt} 次${o.subcnt?'、增資認股 '+o.subcnt+' 次':''}${o.bcnt?'、配股 '+o.bcnt+' 次':''}${o.scnt?'、賣 '+o.scnt+' 次':''}</h2>
   <div class="sum">${card('剩餘股數',ns(o.sh))}
    ${card('現價',p!=null?n2(p)+` <button class="x" data-px="${esc(o.c)}" title="手動輸入現價">✎</button>`:`— <button class="x" data-px="${esc(o.c)}" title="手動輸入現價">✎</button>`)}
@@ -538,8 +562,9 @@ function renderQ(){
    ${o.scnt?card('已實現損益（不含息）',sg(o.real),cls(o.real)):''}
    ${card('首筆／最近一筆',r[0].d+'／'+r[r.length-1].d)}</div>
   <p class="note" style="margin:0 0 10px">${has?'未實現（不含息）＝ 市值 − 預估賣出費用 − 剩餘成本；含息 ＝ 再加上累計現金股利。現價'+(S.px[o.c]&&S.px[o.c].m?'為手動輸入':S.px[o.c]&&S.px[o.c].t?'更新於 '+S.px[o.c].t:'')+'。配股只增加股數，不增加成本。':'目前沒有現價，無法計算未實現損益：到「庫存損益」按「更新股價」，或點上方現價旁的 ✎ 手動輸入。'}</p>
-  <div class="tw"><table style="min-width:640px"><tr><th>日期</th><th>類型</th><th>價格</th><th>股數</th><th>成交金額</th><th>費用（含稅）</th><th>累計股數</th></tr>${r.map(b=>{const bn=b.t==='bonus',sl=b.t==='sell';run+=bn?b.m:sl?-b.s:b.s;
-   return `<tr><td>${b.d}</td><td>${TN[b.t]||b.t}</td><td>${bn?'—':n2(b.p)}</td><td>${sl?'−':'+'}${ns(bn?b.m:b.s)}</td><td>${bn?'—':n0(b.p*b.s)}</td><td>${bn?'—':n0(b.f+b.x)}</td><td>${ns(run)}</td></tr>`}).join('')}</table></div>
+  ${calc}
+  <div class="tw"><table style="min-width:720px"><tr><th>日期</th><th>類型</th><th>價格</th><th>股數</th><th>成交金額</th><th>手續費</th><th>證交稅</th><th>累計股數</th></tr>${r.map(b=>{const bn=b.t==='bonus',sl=b.t==='sell';run+=bn?b.m:sl?-b.s:b.s;
+   return `<tr><td>${b.d}</td><td>${TN[b.t]||b.t}</td><td>${bn?'—':n2(b.p)}</td><td>${sl?'−':'+'}${ns(bn?b.m:b.s)}</td><td>${bn?'—':n0(b.p*b.s)}</td><td>${bn?'—':n0(b.f)}</td><td>${sl&&b.x?n0(b.x):'—'}</td><td>${ns(run)}</td></tr>`}).join('')}</table></div>
   <p class="note">累計：買進 ${ns(sum.buy)} 股　增資認股 ${ns(sum.sub)} 股　配股 ${ns(sum.bonus)} 股　賣出 ${ns(sum.sell)} 股</p>`}).join('')}
 
 function renderAll(){
