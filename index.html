@@ -117,13 +117,18 @@ textarea{font:.78rem/1.4 monospace;width:100%;height:150px;border:2px solid var(
 <section class="panel" id="p-buy">
  <div class="card"><h2>新增一筆買進</h2>
   <div class="grid">
-   <label>類型<select id="fk"><option value="buy">買進</option><option value="sub">增資認股</option></select></label>
+   <label>類型<select id="fk"><option value="buy">買進</option><option value="sub">增資認股</option><option value="drip">股息再投資</option></select></label>
    <label>日期<input type="date" id="fd"></label>
    <label>股票代號<input id="fc" list="codes" placeholder="例：2330 或 AAPL" inputmode="text"></label>
    <label>股票名稱<input id="fn" placeholder="輸入代號自動帶入"></label>
    <label><span id="fpl">購入價格（元）</span><input type="number" id="fp" step="0.01" min="0"></label>
    <label>購入股數<input type="number" id="fs" step="any" min="0" placeholder="1張=1000股"></label>
    <label>手續費（元）<input type="number" id="ff" step="1" min="0" placeholder="自動試算"></label>
+  </div>
+  <div id="dripbox" class="calc" hidden>
+   <label style="flex-direction:row;align-items:center;gap:8px;color:var(--ink)"><input type="checkbox" id="fdk" checked style="width:auto"> 同時記錄這筆股息收入（若已另外記過這筆股利，請取消勾選）</label>
+   <label style="margin-top:8px;max-width:280px">本次領到的股息（元）<input type="number" id="fdv" step="any" min="0"></label>
+   <p class="note">股息再投資＝先領到現金股息，再拿去買進。程式會記成「一筆現金股利」加「一筆股息再投資的買進」，所以含息損益不會重複計算。</p>
   </div>
   <div class="row"><button class="btn" id="add">放進帳本</button><button class="btn alt" id="cancelb" hidden>取消修改</button><span class="note" id="fnote"></span></div>
  </div>
@@ -361,8 +366,9 @@ function quote_(codes) {
   <p class="note" style="margin-top:0">資料存在這台電腦的瀏覽器裡，換電腦或清除瀏覽資料前，請先備份。</p>
   <div class="row"><button class="btn" id="e-json">下載備份檔</button><label style="width:240px">還原備份檔<input type="file" id="i-json" accept=".json"></label></div>
  </div>
-<div class="card"><h2>版本說明　v1.8（2026-11-19）</h2>
+<div class="card"><h2>版本說明　v1.9（2026-11-19）</h2>
   <ul class="note" style="line-height:1.9;padding-left:20px;margin:0">
+   <li><b>v1.9</b>　買進建檔新增類型「股息再投資」：可同時記下「現金股利」與「再投資買進」兩筆，含息損益不會重複計算；購入紀錄、庫存、單股查詢都會標示「股息再投資」，次數與累計股數分開統計；刪除時可一併刪除對應的股利。</li>
    <li><b>v1.8</b>　新增「股票分割／反分割」：在買進建檔頁記下生效日與倍數（0050 為 2025-06-11、1 拆 4，倍數填 4），生效日前的持股自動乘上倍數、總成本不變；分割前的買進照當時價格與股數輸入即可，單股查詢會並列顯示「分割後」的等值價格與股數。</li>
    <li><b>v1.7</b>　單股查詢新增「賣出試算」：可設定賣出股數與目標淨賺（% 或金額），算出回本賣價與目標賣價（不含息／含息），已扣買入成本、賣出手續費與證交稅；明細表「費用」改為「手續費」，另列「證交稅」欄。</li>
    <li><b>v1.6.2</b>　單股查詢加強：顯示現價（可手動輸入）、市值、預估賣出費用、累計現金股利、累計配股，並寫出未實現損益的算法；明細表新增成交金額、費用（含稅）與累計股數，底部列出買進、增資認股、配股、賣出的累計股數。</li>
@@ -426,9 +432,9 @@ const px=c=>S.px[c]&&S.px[c].p;
 const SO=t=>t==='split'?0:t==='sell'?2:1; // 同一天：分割 → 買進/配股 → 賣出
 function ledger(ex){
  const H={},sells=[];
- const ev=S.recs.filter(r=>r.u===S.cur&&r.id!==ex&&(r.t==='buy'||r.t==='sub'||r.t==='sell'||r.t==='bonus'||r.t==='split')).sort((a,b)=>(a.d+SO(a.t)+a.id).localeCompare(b.d+SO(b.t)+b.id));
+ const ev=S.recs.filter(r=>r.u===S.cur&&r.id!==ex&&(r.t==='buy'||r.t==='sub'||r.t==='drip'||r.t==='sell'||r.t==='bonus'||r.t==='split')).sort((a,b)=>(a.d+SO(a.t)+a.id).localeCompare(b.d+SO(b.t)+b.id));
  ev.forEach(r=>{const o=H[r.c]||(H[r.c]={c:r.c,n:r.n,sh:0,cost:0,cnt:0,scnt:0,real:0,div:0});if(r.n)o.n=r.n;
-  if(r.t==='buy'||r.t==='sub'){o.sh+=r.s;o.cost+=r.p*r.s+r.f;if(r.t==='buy')o.cnt++;else o.subcnt=(o.subcnt||0)+1}
+  if(r.t==='buy'||r.t==='sub'||r.t==='drip'){o.sh+=r.s;o.cost+=r.p*r.s+r.f;if(r.t==='buy')o.cnt++;else if(r.t==='sub')o.subcnt=(o.subcnt||0)+1;else o.dripcnt=(o.dripcnt||0)+1}
   else if(r.t==='split'){o.sh=Math.round(o.sh*r.p*1e6)/1e6;o.spcnt=(o.spcnt||0)+1}
   else if(r.t==='bonus'){o.sh+=r.m;o.bsh=(o.bsh||0)+r.m;o.bcnt=(o.bcnt||0)+1}
   else{const q=Math.min(r.s,o.sh),out=o.sh>0?o.cost*q/o.sh:0,net=r.p*r.s-r.f-r.x,rl=net-out;o.sh-=q;o.cost-=out;o.scnt++;o.real+=rl;sells.push({...r,net,out,rl})}});
@@ -463,12 +469,12 @@ async function usQuote(sym,wantName,useGs){
  return null}
 let loadingPx=false,LASTPX=0;const TRIED=new Set();
 async function loadAll(){if(loadingPx)return;loadingPx=true;try{await loadAll0()}finally{loadingPx=false;LASTPX=Date.now()}}
-function ensurePx(){if(loadingPx)return;const miss=[...new Set(S.recs.filter(r=>r.t==='buy'||r.t==='sub'||r.t==='sell').map(r=>r.c))].filter(c=>px(c)==null&&!TRIED.has(c));if(!miss.length)return;miss.forEach(c=>TRIED.add(c));loadAll()}
+function ensurePx(){if(loadingPx)return;const miss=[...new Set(S.recs.filter(r=>r.t==='buy'||r.t==='sub'||r.t==='drip'||r.t==='sell').map(r=>r.c))].filter(c=>px(c)==null&&!TRIED.has(c));if(!miss.length)return;miss.forEach(c=>TRIED.add(c));loadAll()}
 async function loadAll0(){
  const st=$('#pxs');st.textContent='股價更新中…';
  const get=async u=>{const r=await fetch(u);if(!r.ok)throw 0;return r.json()};
  const getx=u=>jget(u);
- const codes=[...new Set(S.recs.filter(r=>r.t==='buy'||r.t==='sub'||r.t==='sell').map(r=>r.c))],us=codes.filter(isUS),tw=codes.filter(c=>!isUS(c));
+ const codes=[...new Set(S.recs.filter(r=>r.t==='buy'||r.t==='sub'||r.t==='drip'||r.t==='sell').map(r=>r.c))],us=codes.filter(isUS),tw=codes.filter(c=>!isUS(c));
  const now=new Date().toLocaleString('zh-TW',{hour12:false});let ok=0,uo=0,g={};
  await Promise.allSettled([
   getx('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL').then(a=>{a.forEach(r=>{const p=parseFloat(String(r.ClosingPrice).replace(/,/g,''));ALL[r.Code]={n:r.Name,p:isNaN(p)?null:p}});ok++}),
@@ -499,8 +505,8 @@ function renderUsers(){
  $('#users').innerHTML=['u1','u2'].map(u=>`<button data-u="${u}" aria-pressed="${S.cur==u}">${esc(uname(u))}</button>`).join('');
  if(document.activeElement!==$('#u1n'))$('#u1n').value=uname('u1');if(document.activeElement!==$('#u2n'))$('#u2n').value=uname('u2')}
 function renderBuys(){
- const rows=S.recs.filter(r=>r.u===S.cur&&(r.t==='buy'||r.t==='sub'||r.t==='split')).sort((a,b)=>b.d.localeCompare(a.d)||(b.id>a.id?1:-1));
- $('#buys').innerHTML=rows.length?`<table><tr><th>日期</th><th>代號・名稱</th><th>價格</th><th>股數</th><th>手續費</th><th>總成本</th><th></th></tr>${rows.map(b=>b.t==='split'?`<tr><td>${b.d}</td><td>${esc(b.c)} ${esc(b.n)}<span class="chip">股票分割</span></td><td colspan="4">1 股變成 ${b.p} 股（×${b.p}），成本不變</td><td style="white-space:nowrap"><button class="x" data-edit="${b.id}">編輯</button> <button class="x" data-del="${b.id}">刪除</button></td></tr>`:`<tr>${ctx(b.c)}<td>${b.d}</td><td>${esc(b.c)} ${esc(b.n)}${tag(b.c)}${b.t==='sub'?'<span class="chip">增資認股</span>':''}</td><td>${n2(b.p)}</td><td>${ns(b.s)}</td><td>${n0(b.f)}</td><td>${n0(b.p*b.s+b.f)}</td><td style="white-space:nowrap"><button class="x" data-edit="${b.id}">編輯</button> <button class="x" data-del="${b.id}">刪除</button></td></tr>`).join('')}</table>`:emptyBox('還沒有紀錄，從上面填第一筆吧');
+ const rows=S.recs.filter(r=>r.u===S.cur&&(r.t==='buy'||r.t==='sub'||r.t==='drip'||r.t==='split')).sort((a,b)=>b.d.localeCompare(a.d)||(b.id>a.id?1:-1));
+ $('#buys').innerHTML=rows.length?`<table><tr><th>日期</th><th>代號・名稱</th><th>價格</th><th>股數</th><th>手續費</th><th>總成本</th><th></th></tr>${rows.map(b=>b.t==='split'?`<tr><td>${b.d}</td><td>${esc(b.c)} ${esc(b.n)}<span class="chip">股票分割</span></td><td colspan="4">1 股變成 ${b.p} 股（×${b.p}），成本不變</td><td style="white-space:nowrap"><button class="x" data-edit="${b.id}">編輯</button> <button class="x" data-del="${b.id}">刪除</button></td></tr>`:`<tr>${ctx(b.c)}<td>${b.d}</td><td>${esc(b.c)} ${esc(b.n)}${tag(b.c)}${b.t==='sub'?'<span class="chip">增資認股</span>':b.t==='drip'?'<span class="chip">股息再投資</span>':''}</td><td>${n2(b.p)}</td><td>${ns(b.s)}</td><td>${n0(b.f)}</td><td>${n0(b.p*b.s+b.f)}</td><td style="white-space:nowrap"><button class="x" data-edit="${b.id}">編輯</button> <button class="x" data-del="${b.id}">刪除</button></td></tr>`).join('')}</table>`:emptyBox('還沒有紀錄，從上面填第一筆吧');
 }
 function renderSells(){
  const {H,sells}=ledger(),tr=sells.reduce((s,r)=>s+r.rl*fx(r.c),0),dv=H.filter(o=>o.scnt).reduce((s,o)=>s+o.div*fx(o.c),0);ctx('');
@@ -519,13 +525,13 @@ function renderHold(){
  $('#hold').innerHTML=L.length?`<table style="min-width:900px"><tr><th>股票</th><th>剩餘股數</th><th>平均成本</th><th>現價</th><th>不含息損益</th><th>含息損益</th><th>回本賣價</th><th>目標賣價（不含息）</th><th>目標賣價（含息）</th></tr>${L.map(o=>{
   const p=px(o.c),avg=o.cost/o.sh,pl=p!=null?sellNet(o.c,p,o.sh)-o.cost:null;
   const be=priceFor(o.c,o.sh,o.cost),g=o.cost*t,t1=priceFor(o.c,o.sh,o.cost+g),t2=priceFor(o.c,o.sh,Math.max(0,o.cost+g-o.div));
-  return `<tr>${ctx(o.c)}<td>${esc(o.c)} ${esc(o.n)}${tag(o.c)}<span class="chip">買${o.cnt}次</span>${o.subcnt?`<span class="chip">認股${o.subcnt}次</span>`:''}${o.spcnt?`<span class="chip">分割${o.spcnt}次</span>`:''}${o.scnt?`<span class="chip">賣${o.scnt}次</span>`:''}</td><td>${ns(o.sh)}</td><td>${n2(avg)}<small>成本 ${n0(o.cost)}</small></td>
+  return `<tr>${ctx(o.c)}<td>${esc(o.c)} ${esc(o.n)}${tag(o.c)}<span class="chip">買${o.cnt}次</span>${o.subcnt?`<span class="chip">認股${o.subcnt}次</span>`:''}${o.dripcnt?`<span class="chip">再投資${o.dripcnt}次</span>`:''}${o.spcnt?`<span class="chip">分割${o.spcnt}次</span>`:''}${o.scnt?`<span class="chip">賣${o.scnt}次</span>`:''}</td><td>${ns(o.sh)}</td><td>${n2(avg)}<small>成本 ${n0(o.cost)}</small></td>
   <td>${p!=null?n2(p):'—'} <button class="x" data-px="${esc(o.c)}" title="手動輸入現價">✎</button></td>
   <td>${pl!=null?`<b class="${cls(pl)}">${sg(pl)}</b><small class="${cls(pl)}">${(pl/o.cost*100).toFixed(2)}%</small>`:'—'}</td>
   <td>${pl!=null?`<b class="${cls(pl+o.div)}">${sg(pl+o.div)}</b><small>股利 ${n0(o.div)}</small>`:'—'}</td>
   <td>${n2(be)}<small>賣出剛好不虧</small></td><td>${n2(t1)}<small>淨賺 ${n0(g)}</small></td><td>${n2(t2)}<small>${o.div?'含息淨賺 '+n0(g):'尚無股利'}</small></td></tr>`}).join('')}</table>`:emptyBox('目前沒有持股，到「買進建檔」放入第一筆');
  const dv=S.recs.filter(r=>r.u===S.cur&&(r.t==='div'||r.t==='bonus')).sort((a,b)=>b.d.localeCompare(a.d));
- $('#divs').innerHTML=dv.length?`<table style="min-width:560px"><tr><th>發放日</th><th>類型</th><th>股票</th><th>每股</th><th>基準股數</th><th>實領／配得</th><th></th></tr>${dv.map(d=>`<tr>${ctx(d.c)}<td>${d.d}</td><td>${d.t==='bonus'?'配股':'現金'}</td><td>${esc(d.c)} ${esc(nameOf(d.c))}${tag(d.c)}</td><td>${d.p}</td><td>${ns(d.s)}</td><td>${d.t==='bonus'?'+'+ns(d.m)+' 股':n0(d.m)}</td><td style="white-space:nowrap"><button class="x" data-edit="${d.id}">編輯</button> <button class="x" data-del="${d.id}">刪除</button></td></tr>`).join('')}</table>`:'';
+ $('#divs').innerHTML=dv.length?`<table style="min-width:560px"><tr><th>發放日</th><th>類型</th><th>股票</th><th>每股</th><th>基準股數</th><th>實領／配得</th><th></th></tr>${dv.map(d=>`<tr>${ctx(d.c)}<td>${d.d}</td><td>${d.t==='bonus'?'配股':'現金'}</td><td>${esc(d.c)} ${esc(nameOf(d.c))}${tag(d.c)}</td><td>${d.p||'—'}</td><td>${d.s?ns(d.s):'—'}</td><td>${d.t==='bonus'?'+'+ns(d.m)+' 股':n0(d.m)}</td><td style="white-space:nowrap"><button class="x" data-edit="${d.id}">編輯</button> <button class="x" data-del="${d.id}">刪除</button></td></tr>`).join('')}</table>`:'';
 }
 function qCompute(o){
  const st=S.qc[o.c]||{},s0=+st.sh,sh=s0>0?Math.min(s0,o.sh):o.sh,costS=o.cost*sh/o.sh,divS=o.div*sh/o.sh;
@@ -548,12 +554,12 @@ function renderQ(){
  if(!q){box.innerHTML=`<div class="empty">${deco}<div>輸入代號或名稱，馬上看到買了幾次</div></div>`;return}
  const {H}=ledger(),os=H.filter(o=>o.c.toLowerCase().includes(q)||(o.n||'').toLowerCase().includes(q));
  if(!os.length){box.innerHTML=emptyBox('找不到這支股票的紀錄');return}
- const ord=SO,TN={buy:'買進',sub:'增資認股',bonus:'配股',sell:'賣出',split:'股票分割'};
+ const ord=SO,TN={buy:'買進',sub:'增資認股',drip:'股息再投資',bonus:'配股',sell:'賣出',split:'股票分割'};
  box.innerHTML=os.map(o=>{
-  const r=S.recs.filter(x=>x.u===S.cur&&x.c==o.c&&(x.t==='buy'||x.t==='sub'||x.t==='sell'||x.t==='bonus'||x.t==='split')).sort((a,b)=>(a.d+ord(a.t)+a.id).localeCompare(b.d+ord(b.t)+b.id));
+  const r=S.recs.filter(x=>x.u===S.cur&&x.c==o.c&&(x.t==='buy'||x.t==='sub'||x.t==='drip'||x.t==='sell'||x.t==='bonus'||x.t==='split')).sort((a,b)=>(a.d+ord(a.t)+a.id).localeCompare(b.d+ord(b.t)+b.id));
   const p=px(o.c),has=p!=null&&o.sh>0,mv=has?p*o.sh:null,sf=has?fee(p*o.sh,o.c)+tax(o.c,p*o.sh):null,pl=has?sellNet(o.c,p,o.sh)-o.cost:null;
   const card=(l,v,c)=>`<div><span>${l}</span><b${c?` class="${c}"`:''} style="font-size:1.1rem">${v}</b></div>`;
-  const sum={buy:0,sub:0,bonus:0,sell:0,split:0};r.forEach(b=>{sum[b.t]+=b.t==='bonus'?b.m:b.s});
+  const sum={buy:0,sub:0,drip:0,bonus:0,sell:0,split:0};r.forEach(b=>{sum[b.t]+=b.t==='bonus'?b.m:b.s});
   let run=0;const fac=[];{let f=1;for(let i=r.length-1;i>=0;i--){fac[i]=f;if(r[i].t==='split')f*=r[i].p}}
   const k=o.sh>0?qCompute(o):null,st=S.qc[o.c]||{},ec=esc(o.c);
   const calc=k?`<div class="calc"><b>賣出試算：要賣多少才達到目標淨賺</b><div class="grid" style="margin-top:8px">
@@ -561,7 +567,7 @@ function renderQ(){
    <label>目標淨賺（%）<input type="number" step="0.1" min="0" data-c="${ec}" data-q="pct" value="${+k.pct.toFixed(2)}"></label>
    <label>或直接填目標淨賺金額<input type="number" step="any" min="0" data-c="${ec}" data-q="amt" value="${Math.round(k.g*100)/100}"></label></div>
    <div data-qout="${ec}">${qHtml(o,k)}</div></div>`:'';
-  return `<h2>${ctx(o.c)}${esc(o.c)} ${esc(o.n)}${tag(o.c)}　買 ${o.cnt} 次${o.subcnt?'、增資認股 '+o.subcnt+' 次':''}${o.bcnt?'、配股 '+o.bcnt+' 次':''}${o.spcnt?'、分割 '+o.spcnt+' 次':''}${o.scnt?'、賣 '+o.scnt+' 次':''}</h2>
+  return `<h2>${ctx(o.c)}${esc(o.c)} ${esc(o.n)}${tag(o.c)}　買 ${o.cnt} 次${o.subcnt?'、增資認股 '+o.subcnt+' 次':''}${o.dripcnt?'、股息再投資 '+o.dripcnt+' 次':''}${o.bcnt?'、配股 '+o.bcnt+' 次':''}${o.spcnt?'、分割 '+o.spcnt+' 次':''}${o.scnt?'、賣 '+o.scnt+' 次':''}</h2>
   <div class="sum">${card('剩餘股數',ns(o.sh))}
    ${card('現價',p!=null?n2(p)+` <button class="x" data-px="${esc(o.c)}" title="手動輸入現價">✎</button>`:`— <button class="x" data-px="${esc(o.c)}" title="手動輸入現價">✎</button>`)}
    ${card('市值（現價×剩餘股數）',has?n0(mv):'—')}
@@ -579,7 +585,7 @@ function renderQ(){
    if(sp)return `<tr><td>${b.d}</td><td>${TN.split}</td><td>—</td><td>×${b.p}</td><td>—</td><td>—</td><td>—</td><td>${ns(run)}</td></tr>`;
    const q=bn?b.m:b.s,adj=f!==1?`<small>分割後 ${ns(q*f)}</small>`:'',adjp=f!==1&&!bn?`<small>分割後約 ${n2(b.p/f)}</small>`:'';
    return `<tr><td>${b.d}</td><td>${TN[b.t]||b.t}</td><td>${bn?'—':n2(b.p)+adjp}</td><td>${sl?'−':'+'}${ns(q)}${adj}</td><td>${bn?'—':n0(b.p*b.s)}</td><td>${bn?'—':n0(b.f)}</td><td>${sl&&b.x?n0(b.x):'—'}</td><td>${ns(run)}</td></tr>`}).join('')}</table></div>
-  <p class="note">累計：買進 ${ns(sum.buy)} 股　增資認股 ${ns(sum.sub)} 股　配股 ${ns(sum.bonus)} 股　賣出 ${ns(sum.sell)} 股</p>`}).join('')}
+  <p class="note">累計：買進 ${ns(sum.buy)} 股　增資認股 ${ns(sum.sub)} 股　股息再投資 ${ns(sum.drip)} 股　配股 ${ns(sum.bonus)} 股　賣出 ${ns(sum.sell)} 股</p>`}).join('')}
 
 function renderAll(){
  renderUsers();renderBuys();renderSells();renderHold();renderQ();
@@ -622,9 +628,9 @@ $('#s-url').onchange=()=>{S.url=$('#s-url').value.trim();save();pull(true)};
 $('#e-gs').onclick=async()=>{const t=$('#gscode');t.select();try{await navigator.clipboard.writeText(t.value)}catch(e){document.execCommand('copy')}toast('程式碼已複製')};
 
 /* ---- 買進／賣出／股利表單 ---- */
-let feeT=false,sfT=false,sxT=false;const EDIT={buy:null,sell:null,div:null,split:null};
-function autoFee(){if(feeT)return;const c=$('#fc').value.trim().toUpperCase(),a=(+$('#fp').value)*(+$('#fs').value);ctx(c);$('#ff').value=a>0?($('#fk').value==='sub'?0:fee(a,c)):'';$('#fnote').textContent=a>0?'成交金額 '+n0(a)+(isUS(c)?' 美元':' 元')+($('#fk').value==='sub'?'，增資認股的手續費預設為 0，可自行修改':'，手續費已自動試算，可自行修改'):''}
-$('#fp').oninput=$('#fs').oninput=autoFee;$('#ff').oninput=()=>feeT=true;
+let feeT=false,sfT=false,sxT=false;const EDIT={buy:null,sell:null,div:null,split:null};let fdvT=false;
+function autoFee(){if(feeT)return;const c=$('#fc').value.trim().toUpperCase(),a=(+$('#fp').value)*(+$('#fs').value);ctx(c);$('#ff').value=a>0?($('#fk').value==='sub'?0:fee(a,c)):'';$('#fnote').textContent=a>0?'成交金額 '+n0(a)+(isUS(c)?' 美元':' 元')+($('#fk').value==='sub'?'，增資認股的手續費預設為 0，可自行修改':$('#fk').value==='drip'?'，股息再投資多為零股成交，手續費請以券商實際為準':'，手續費已自動試算，可自行修改'):''}
+$('#fp').oninput=$('#fs').oninput=()=>{autoFee();dripAmt()};$('#ff').oninput=()=>{feeT=true;dripAmt()};
 function fillCode(cs,nm,ps,cb,note){const c=$(cs).value.trim().toUpperCase();$(cs).value=c;
  [nm,ps].forEach(s=>{if($(s).dataset.auto){$(s).value='';delete $(s).dataset.auto}});
  if(!c){cb();return}
@@ -640,18 +646,19 @@ const deb=(f,ms)=>{let t;return()=>{clearTimeout(t);t=setTimeout(f,ms)}};
 $('#fc').onchange=()=>fillCode('#fc','#fn','#fp',autoFee,'#fnote');
 $('#fc').addEventListener('input',deb(()=>{if($('#fc').value.trim().length>=2)fillCode('#fc','#fn','#fp',autoFee,'#fnote')},500));
 ['#fn','#sn','#fp','#sp'].forEach(s=>$(s).addEventListener('input',()=>delete $(s).dataset.auto));
-function fkUpd(){$('#fpl').textContent=$('#fk').value==='sub'?'認購價（元）':'購入價格（元）'}
-$('#fk').onchange=()=>{fkUpd();if(!EDIT.buy){feeT=false;$('#ff').value=''}autoFee()};
+function fkUpd(){$('#fpl').textContent={sub:'認購價（元）',drip:'成交價格（元）'}[$('#fk').value]||'購入價格（元）';$('#dripbox').hidden=$('#fk').value!=='drip'||!!EDIT.buy}
+function dripAmt(){if($('#fk').value!=='drip'||fdvT)return;const a=(+$('#fp').value)*(+$('#fs').value)+(+$('#ff').value||0);$('#fdv').value=a>0?Math.round(a*100)/100:''}
+$('#fk').onchange=()=>{fkUpd();if(!EDIT.buy){feeT=false;$('#ff').value='';fdvT=false}autoFee();dripAmt()};$('#fdv').oninput=()=>fdvT=true;
 function stopEdit(clr){
  if(clr){if(EDIT.buy){['#fc','#fn','#fp','#fs','#ff'].forEach(i=>$(i).value='');$('#fnote').textContent=''}
   if(EDIT.sell){['#sc','#sn','#sp','#ss','#sf','#sx'].forEach(i=>$(i).value='');$('#snote').textContent=''}
   if(EDIT.div)['#dc','#dp','#ds','#dt'].forEach(i=>{$(i).value='';delete $(i).dataset.m});
   if(EDIT.split)['#pc','#pr'].forEach(i=>$(i).value='')}
  EDIT.buy=EDIT.sell=EDIT.div=EDIT.split=null;$('#addp').textContent='記下分割';$('#cancelp').hidden=true;feeT=sfT=sxT=false;
- $('#fk').value='buy';fkUpd();$('#add').textContent='放進帳本';$('#adds').textContent='記下賣出';$('#addd').textContent='記下股利';
+ $('#fk').value='buy';$('#fdv').value='';fdvT=false;fkUpd();$('#add').textContent='放進帳本';$('#adds').textContent='記下賣出';$('#addd').textContent='記下股利';
  ['#cancelb','#cancels','#canceld'].forEach(i=>$(i).hidden=true)}
 function startEdit(r){stopEdit(true);const set=v=>{for(const k in v)$(k).value=v[k]};
- if(r.t==='buy'||r.t==='sub'){tab('buy');$('#fk').value=r.t;fkUpd();set({'#fd':r.d,'#fc':r.c,'#fn':r.n,'#fp':r.p,'#fs':r.s,'#ff':r.f});EDIT.buy=r.id;feeT=true;$('#add').textContent='儲存修改';$('#cancelb').hidden=false;$('#fnote').textContent='編輯中：改完請按「儲存修改」';$('#fd').scrollIntoView({block:'center'})}
+ if(r.t==='buy'||r.t==='sub'||r.t==='drip'){tab('buy');$('#fk').value=r.t;fkUpd();set({'#fd':r.d,'#fc':r.c,'#fn':r.n,'#fp':r.p,'#fs':r.s,'#ff':r.f});EDIT.buy=r.id;feeT=true;fkUpd();$('#add').textContent='儲存修改';$('#cancelb').hidden=false;$('#fnote').textContent='編輯中：改完請按「儲存修改」';$('#fd').scrollIntoView({block:'center'})}
  else if(r.t==='sell'){tab('sell');set({'#sd':r.d,'#sc':r.c,'#sn':r.n,'#sp':r.p,'#ss':r.s,'#sf':r.f,'#sx':r.x});EDIT.sell=r.id;sfT=sxT=true;$('#adds').textContent='儲存修改';$('#cancels').hidden=false;$('#snote').textContent='編輯中：改完請按「儲存修改」';$('#sd').scrollIntoView({block:'center'})}
  else if(r.t==='split'){tab('buy');set({'#pd':r.d,'#pc':r.c,'#pr':r.p});EDIT.split=r.id;$('#addp').textContent='儲存修改';$('#cancelp').hidden=false;$('#pd').scrollIntoView({block:'center'})}
  else if(r.t==='div'||r.t==='bonus'){tab('hold');$('#dk').value=r.t;dkUpd();set({'#dd':r.d,'#dc':r.c,'#dp':r.p,'#ds':r.s,'#dt':r.m});$('#dt').dataset.m=1;EDIT.div=r.id;$('#addd').textContent='儲存修改';$('#canceld').hidden=false;$('#dd').scrollIntoView({block:'center'})}}
@@ -664,7 +671,8 @@ $('#add').onclick=()=>{
  const d=$('#fd').value,c=$('#fc').value.trim().toUpperCase(),p=+$('#fp').value,s=+$('#fs').value;
  if(!d||!c||!(p>0)||!(s>0)){toast('請填寫日期、代號、價格與股數');return}
  const f=$('#ff').value===''?fee(p*s,c):+$('#ff').value,n=$('#fn').value.trim()||nameOf(c);
- put(mk(Object.assign({t:$('#fk').value,d,c,n,p,s,f},EDIT.buy?{id:EDIT.buy}:{})));if(n)S.names[c]=n;
+ const kind=$('#fk').value,rec=mk(Object.assign({t:kind,d,c,n,p,s,f},EDIT.buy?{id:EDIT.buy}:{}));put(rec);
+ if(kind==='drip'&&!EDIT.buy&&$('#fdk').checked&&+$('#fdv').value>0)put(mk({id:rec.id+'-d',t:'div',d,c,n,p:0,s:0,m:+$('#fdv').value}));if(n)S.names[c]=n;
  ['#fc','#fn','#fp','#fs','#ff'].forEach(i=>$(i).value='');$('#fnote').textContent='';const ed=EDIT.buy;stopEdit();toast(ed?'已儲存修改，同步到雲端中…':'已放進帳本')};
 function autoSell(){const c=$('#sc').value.trim().toUpperCase(),a=(+$('#sp').value)*(+$('#ss').value);ctx(c);if(!sfT)$('#sf').value=a>0?fee(a,c):'';if(!sxT)$('#sx').value=a>0?tax(c,a):'';
  const o=ledger().H.find(o=>o.c==c);$('#snote').textContent=o&&o.sh?'目前持有 '+ns(o.sh)+' 股，平均成本 '+n2(o.cost/o.sh)+(isUS(c)?' 美元':''):''}
@@ -692,7 +700,7 @@ $('#addd').onclick=()=>{
 document.addEventListener('click',e=>{
  const t=e.target.closest('button');if(!t)return;
  if(t.dataset.edit){const r=S.recs.find(x=>x.id===t.dataset.edit);if(r)startEdit(r)}
- if(t.dataset.del){const r=S.recs.find(x=>x.id===t.dataset.del);if(r&&confirm('⚠ 確定要刪除這筆'+({buy:'買進',sub:'增資認股',sell:'賣出',div:'股利',bonus:'配股',split:'股票分割'}[r.t]||'')+'紀錄嗎？\n\n'+r.d+'　'+r.c+' '+(r.n||'')+'\n'+(r.t==='split'?'1 股變成 '+r.p+' 股':r.t==='div'?'實領金額 '+r.m:r.t==='bonus'?'配得 '+ns(r.m)+' 股':r.p+' × '+ns(r.s)+' 股')+'\n\n刪除後無法復原；若已連線雲端，試算表裡的這筆也會一起刪除。'))del(t.dataset.del)}
+ if(t.dataset.del){const r=S.recs.find(x=>x.id===t.dataset.del);if(r&&confirm('⚠ 確定要刪除這筆'+({buy:'買進',sub:'增資認股',drip:'股息再投資',sell:'賣出',div:'股利',bonus:'配股',split:'股票分割'}[r.t]||'')+'紀錄嗎？\n\n'+r.d+'　'+r.c+' '+(r.n||'')+'\n'+(r.t==='split'?'1 股變成 '+r.p+' 股':r.t==='div'?'實領金額 '+r.m:r.t==='bonus'?'配得 '+ns(r.m)+' 股':r.p+' × '+ns(r.s)+' 股')+'\n\n刪除後無法復原；若已連線雲端，試算表裡的這筆也會一起刪除。')){del(t.dataset.del);if(r.t==='drip'&&S.recs.some(x=>x.id===r.id+'-d')&&confirm('這筆股息再投資有對應的「現金股利」紀錄，要一併刪除嗎？'))del(r.id+'-d')}}
  if(t.dataset.px){const v=prompt('輸入 '+t.dataset.px+' 的現價',px(t.dataset.px)||'');if(v!==null&&+v>0){S.px[t.dataset.px]={p:+v,t:'',m:1};save();renderAll()}}
  if(t.dataset.u){stopEdit(true);S.cur=t.dataset.u;save();renderAll();toast('已切換到 '+uname(S.cur))}});
 $('#qq').oninput=renderQ;$('#refresh').onclick=()=>{TRIED.clear();loadAll()};
@@ -706,7 +714,7 @@ $('#fxauto').onclick=()=>{S.fxm=0;save();loadAll()};
 $('#s-key').value=S.key;$('#s-key').onchange=()=>{S.key=$('#s-key').value.trim();save();loadAll()};
 const csv=(rows,name)=>{const b=new Blob(['\ufeff'+rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=uname(S.cur)+'_'+name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)};
 const rd=v=>Math.round(v*100)/100;
-const buyRows=()=>[['日期','股票代號','股票名稱','購入價格','購入股數','手續費','類型'],...S.recs.filter(r=>r.u===S.cur&&(r.t==='buy'||r.t==='sub'||r.t==='split')).map(b=>[b.d,b.c,b.n,b.p,b.s,b.f,b.t==='split'?'股票分割（價格欄為倍數）':b.t==='sub'?'增資認股':'買進'])];
+const buyRows=()=>[['日期','股票代號','股票名稱','購入價格','購入股數','手續費','類型'],...S.recs.filter(r=>r.u===S.cur&&(r.t==='buy'||r.t==='sub'||r.t==='drip'||r.t==='split')).map(b=>[b.d,b.c,b.n,b.p,b.s,b.f,b.t==='split'?'股票分割（價格欄為倍數）':b.t==='sub'?'增資認股':b.t==='drip'?'股息再投資':'買進'])];
 $('#e-buys').onclick=()=>csv(buyRows(),'購入紀錄.csv');
 $('#e-sells').onclick=()=>csv([['日期','股票代號','股票名稱','賣出價格','賣出股數','手續費','證交稅','淨收入','賣出股數的買入成本','已實現損益'],...ledger().sells.map(r=>[r.d,r.c,r.n,r.p,r.s,r.f,r.x,rd(r.net),rd(r.out),rd(r.rl)])],'賣出紀錄.csv');
 $('#e-divs').onclick=()=>csv([['發放日','類型','股票代號','每股股利或股票股利','基準股數','實領金額或配得股數'],...S.recs.filter(r=>r.u===S.cur&&(r.t==='div'||r.t==='bonus')).map(d=>[d.d,d.t==='bonus'?'配股':'現金股利',d.c,d.p,d.s,d.m])],'股利紀錄.csv');
