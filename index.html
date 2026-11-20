@@ -368,8 +368,9 @@ function quote_(codes) {
   <p class="note" style="margin-top:0">資料存在這台電腦的瀏覽器裡，換電腦或清除瀏覽資料前，請先備份。</p>
   <div class="row"><button class="btn" id="e-json">下載備份檔</button><label style="width:240px">還原備份檔<input type="file" id="i-json" accept=".json"></label></div>
  </div>
-<div class="card"><h2>版本說明　v1.9.1（2026-11-20）</h2>
+<div class="card"><h2>版本說明　v1.9.2（2026-11-20）</h2>
   <ul class="note" style="line-height:1.9;padding-left:20px;margin:0">
+   <li><b>v1.9.2</b>　單股查詢：明細改成日期最新的在最上面（累計股數仍依時間順序計算）；明細表加入現金股利（含應領與扣款）與配股的每股股票股利資訊；底部累計列新增現金股利總額與「目前持有股數」。</li>
    <li><b>v1.9.1</b>　現金股利新增「匯費」與「補充保費／其他扣款」欄位：實領金額自動 ＝ 應領 − 扣款（仍可自行修改）；股利表顯示應領與扣款，單股查詢顯示股利扣款合計；損益一律以實領金額計算。CSV 也多了兩欄。</li>
    <li><b>v1.9</b>　買進建檔新增類型「股息再投資」：可同時記下「現金股利」與「再投資買進」兩筆，含息損益不會重複計算；購入紀錄、庫存、單股查詢都會標示「股息再投資」，次數與累計股數分開統計；刪除時可一併刪除對應的股利。</li>
    <li><b>v1.8</b>　新增「股票分割／反分割」：在買進建檔頁記下生效日與倍數（0050 為 2025-06-11、1 拆 4，倍數填 4），生效日前的持股自動乘上倍數、總成本不變；分割前的買進照當時價格與股數輸入即可，單股查詢會並列顯示「分割後」的等值價格與股數。</li>
@@ -557,12 +558,12 @@ function renderQ(){
  if(!q){box.innerHTML=`<div class="empty">${deco}<div>輸入代號或名稱，馬上看到買了幾次</div></div>`;return}
  const {H}=ledger(),os=H.filter(o=>o.c.toLowerCase().includes(q)||(o.n||'').toLowerCase().includes(q));
  if(!os.length){box.innerHTML=emptyBox('找不到這支股票的紀錄');return}
- const ord=SO,TN={buy:'買進',sub:'增資認股',drip:'股息再投資',bonus:'配股',sell:'賣出',split:'股票分割'};
+ const ord=SO,TN={buy:'買進',sub:'增資認股',drip:'股息再投資',bonus:'配股',sell:'賣出',split:'股票分割',div:'現金股利'};
  box.innerHTML=os.map(o=>{
-  const r=S.recs.filter(x=>x.u===S.cur&&x.c==o.c&&(x.t==='buy'||x.t==='sub'||x.t==='drip'||x.t==='sell'||x.t==='bonus'||x.t==='split')).sort((a,b)=>(a.d+ord(a.t)+a.id).localeCompare(b.d+ord(b.t)+b.id));
+  const r=S.recs.filter(x=>x.u===S.cur&&x.c==o.c&&(x.t==='buy'||x.t==='sub'||x.t==='drip'||x.t==='sell'||x.t==='bonus'||x.t==='split'||x.t==='div')).sort((a,b)=>(a.d+ord(a.t)+a.id).localeCompare(b.d+ord(b.t)+b.id));
   const p=px(o.c),has=p!=null&&o.sh>0,mv=has?p*o.sh:null,sf=has?fee(p*o.sh,o.c)+tax(o.c,p*o.sh):null,pl=has?sellNet(o.c,p,o.sh)-o.cost:null;
   const card=(l,v,c)=>`<div><span>${l}</span><b${c?` class="${c}"`:''} style="font-size:1.1rem">${v}</b></div>`;
-  const sum={buy:0,sub:0,drip:0,bonus:0,sell:0,split:0};r.forEach(b=>{sum[b.t]+=b.t==='bonus'?b.m:b.s});
+  const sum={buy:0,sub:0,drip:0,bonus:0,sell:0,split:0,div:0};r.forEach(b=>{sum[b.t]+=(b.t==='bonus'||b.t==='div')?b.m:b.s});const tr=r.filter(x=>x.t!=='div');
   let run=0;const fac=[];{let f=1;for(let i=r.length-1;i>=0;i--){fac[i]=f;if(r[i].t==='split')f*=r[i].p}}
   const k=o.sh>0?qCompute(o):null,st=S.qc[o.c]||{},ec=esc(o.c);
   const calc=k?`<div class="calc"><b>賣出試算：要賣多少才達到目標淨賺</b><div class="grid" style="margin-top:8px">
@@ -582,14 +583,15 @@ function renderQ(){
    ${card('未實現（含息）',has?sg(pl+o.div):'—',has?cls(pl+o.div):'')}
    ${o.bcnt?card('累計配股',ns(o.bsh)+' 股（'+o.bcnt+' 次）'):''}
    ${o.scnt?card('已實現損益（不含息）',sg(o.real),cls(o.real)):''}
-   ${card('首筆／最近一筆',r[0].d+'／'+r[r.length-1].d)}</div>
+   ${card('首筆／最近一筆',(tr[0]||r[0]).d+'／'+(tr[tr.length-1]||r[r.length-1]).d)}</div>
   <p class="note" style="margin:0 0 10px">${has?'未實現（不含息）＝ 市值 − 預估賣出費用 − 剩餘成本；含息 ＝ 再加上累計現金股利。現價'+(S.px[o.c]&&S.px[o.c].m?'為手動輸入':S.px[o.c]&&S.px[o.c].t?'更新於 '+S.px[o.c].t:'')+'。配股只增加股數，不增加成本。':'目前沒有現價，無法計算未實現損益：到「庫存損益」按「更新股價」，或點上方現價旁的 ✎ 手動輸入。'}</p>
   ${calc}
-  <div class="tw"><table style="min-width:720px"><tr><th>日期</th><th>類型</th><th>價格</th><th>股數</th><th>成交金額</th><th>手續費</th><th>證交稅</th><th>累計股數</th></tr>${r.map((b,i)=>{const bn=b.t==='bonus',sl=b.t==='sell',sp=b.t==='split',f=fac[i];run=sp?Math.round(run*b.p*1e6)/1e6:run+(bn?b.m:sl?-b.s:b.s);
+  <div class="tw"><table style="min-width:720px"><tr><th>日期</th><th>類型</th><th>價格</th><th>股數</th><th>成交金額</th><th>手續費</th><th>證交稅</th><th>累計股數</th></tr>${r.map((b,i)=>{const bn=b.t==='bonus',sl=b.t==='sell',sp=b.t==='split',dv=b.t==='div',f=fac[i];if(!dv)run=sp?Math.round(run*b.p*1e6)/1e6:run+(bn?b.m:sl?-b.s:b.s);
    if(sp)return `<tr><td>${b.d}</td><td>${TN.split}</td><td>—</td><td>×${b.p}</td><td>—</td><td>—</td><td>—</td><td>${ns(run)}</td></tr>`;
-   const q=bn?b.m:b.s,adj=f!==1?`<small>分割後 ${ns(q*f)}</small>`:'',adjp=f!==1&&!bn?`<small>分割後約 ${n2(b.p/f)}</small>`:'';
-   return `<tr><td>${b.d}</td><td>${TN[b.t]||b.t}</td><td>${bn?'—':n2(b.p)+adjp}</td><td>${sl?'−':'+'}${ns(q)}${adj}</td><td>${bn?'—':n0(b.p*b.s)}</td><td>${bn?'—':n0(b.f)}</td><td>${sl&&b.x?n0(b.x):'—'}</td><td>${ns(run)}</td></tr>`}).join('')}</table></div>
-  <p class="note">累計：買進 ${ns(sum.buy)} 股　增資認股 ${ns(sum.sub)} 股　股息再投資 ${ns(sum.drip)} 股　配股 ${ns(sum.bonus)} 股　賣出 ${ns(sum.sell)} 股</p>`}).join('')}
+   if(dv)return `<tr><td>${b.d}</td><td>${TN.div}</td><td>${b.p?'每股 '+b.p:'—'}</td><td>${b.s?'領息 '+ns(b.s)+' 股':'—'}</td><td>+${n0(b.m)}${(b.f||b.x)?`<small>應領 ${n0(b.m+b.f+b.x)}，扣 ${n0(b.f+b.x)}</small>`:''}</td><td>—</td><td>—</td><td>${ns(run)}</td></tr>`;
+   const q=bn?b.m:b.s,adj=f!==1?`<small>分割後 ${ns(q*f)}</small>`:'',adjp=f!==1&&!bn?`<small>分割後約 ${n2(b.p/f)}</small>`:'',bi=bn&&b.p?`<small>每股 ${b.p} 元 × ${ns(b.s)} 股</small>`:'';
+   return `<tr><td>${b.d}</td><td>${TN[b.t]||b.t}</td><td>${bn?'—':n2(b.p)+adjp}</td><td>${sl?'−':'+'}${ns(q)}${adj}${bi}</td><td>${bn?'—':n0(b.p*b.s)}</td><td>${bn?'—':n0(b.f)}</td><td>${sl&&b.x?n0(b.x):'—'}</td><td>${ns(run)}</td></tr>`}).reverse().join('')}</table></div>
+  <p class="note">累計：買進 ${ns(sum.buy)} 股　增資認股 ${ns(sum.sub)} 股　股息再投資 ${ns(sum.drip)} 股　配股 ${ns(sum.bonus)} 股　賣出 ${ns(sum.sell)} 股　現金股利（實領）${n0(sum.div)} ${isUS(o.c)?'美元':'元'}　<b>目前持有 ${ns(o.sh)} 股</b></p>`}).join('')}
 
 function renderAll(){
  renderUsers();renderBuys();renderSells();renderHold();renderQ();
